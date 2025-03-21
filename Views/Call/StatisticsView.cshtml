@@ -1,0 +1,118 @@
+﻿@{
+    ViewData["Title"] = "Statistiche Chiamate";
+}
+
+<h2>Statistiche delle Chiamate</h2>
+
+<!-- Menù a tendina per la selezione del filtro -->
+<select id="filterType">
+    <option value="all">Mostra tutte le chiamate</option>
+    <option value="selected">Seleziona intervallo di tempo</option>
+</select>
+
+<!-- Form per l'inserimento delle date e dell'ora (nascosto di default) -->
+<div id="dateRangeForm" style="display: none;">
+    <label for="fromDate">Da:</label>
+    <input type="date" id="fromDate" name="fromDate">
+    <input type="time" id="fromTime" name="fromTime">
+
+    <label for="toDate">A:</label>
+    <input type="date" id="toDate" name="toDate">
+    <input type="time" id="toTime" name="toTime">
+
+    <button id="applyFilter">Applica</button>
+</div>
+
+<!-- Canvas per il grafico -->
+<canvas id="callChart" width="400" height="200"></canvas>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+    document.addEventListener("DOMContentLoaded", function () {
+        const filterType = document.getElementById("filterType");
+        const dateRangeForm = document.getElementById("dateRangeForm");
+        const fromDateInput = document.getElementById("fromDate");
+        const fromTimeInput = document.getElementById("fromTime");
+        const toDateInput = document.getElementById("toDate");
+        const toTimeInput = document.getElementById("toTime");
+        const applyFilterButton = document.getElementById("applyFilter");
+
+        let chart; // Variabile per memorizzare l'istanza del grafico
+
+        // Mostra/nascondi il form in base alla selezione del menù
+        filterType.addEventListener("change", function () {
+            if (filterType.value === "selected") {
+                dateRangeForm.style.display = "block";
+            } else {
+                dateRangeForm.style.display = "none";
+                loadChartData(); // Ricarica il grafico con tutti i dati
+            }
+        });
+
+        // Applica il filtro quando viene cliccato il pulsante
+        applyFilterButton.addEventListener("click", function () {
+            const fromDate = fromDateInput.value;
+            const fromTime = fromTimeInput.value;
+            const toDate = toDateInput.value;
+            const toTime = toTimeInput.value;
+
+            if (fromDate && fromTime && toDate && toTime) {
+                loadChartData(fromDate, fromTime, toDate, toTime); // Ricarica il grafico con i dati filtrati
+            } else {
+                alert("Seleziona entrambe le date e le ore.");
+            }
+        });
+
+        // Funzione per caricare i dati e aggiornare il grafico
+            function loadChartData(fromDate = null, fromTime = null, toDate = null, toTime = null) {
+            let url = "/api/call/get-all-calls"; // Nuovo endpoint
+
+            if (fromDate && fromTime && toDate && toTime) {
+                url = /api/call/statistics-data?fromDate=${fromDate}T${fromTime}&toDate=${toDate}T${toTime};
+            }
+
+            fetch(url)
+                .then(response => response.json())
+                .then(data => {
+                    console.log("Dati ricevuti:", data);
+
+                    const labels = data.map(item => ID: ${item.id} (${item.tipoChiamata}));
+                    const durate = data.map(item =>
+                        (new Date(item.dataFineChiamata) - new Date(item.dataArrivoChiamata)) / 1000
+                    ); // Durata in secondi
+
+                    const ctx = document.getElementById('callChart').getContext('2d');
+
+                    if (chart) {
+                        chart.destroy();
+                    }
+
+                    chart = new Chart(ctx, {
+                        type: 'bar',
+                        data: {
+                            labels: labels,
+                            datasets: [{
+                                label: 'Durata Chiamate (sec)',
+                                data: durate,
+                                backgroundColor: 'rgba(75, 192, 192, 0.6)',
+                                borderColor: 'rgba(75, 192, 192, 1)',
+                                borderWidth: 1
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            scales: {
+                                y: {
+                                    beginAtZero: true
+                                }
+                            }
+                        }
+                    });
+                })
+                .catch(error => console.error("Errore nel recupero dati:", error));
+        }
+
+        // Caricare tutte le chiamate all'avvio
+        loadChartData();
+    });
+</script>
