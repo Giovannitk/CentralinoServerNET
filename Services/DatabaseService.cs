@@ -106,6 +106,7 @@ namespace ServerCentralino.Services
                     }
                 }
             }
+            
             catch (Exception ex)
             {
                 _logger.LogError($"Errore di connessione al database: {ex.Message}");
@@ -331,6 +332,8 @@ namespace ServerCentralino.Services
     {
         public string? RagioneSociale { get; set; }
         public string? Citta { get; set; }
+
+        public string? NumeroContatto { get; set; }
     }
 
     public class Chiamata 
