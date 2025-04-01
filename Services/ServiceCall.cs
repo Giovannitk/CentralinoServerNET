@@ -1,6 +1,7 @@
 ﻿using AsterNET.Manager;
 using AsterNET.Manager.Action;
 using AsterNET.Manager.Event;
+using Microsoft.IdentityModel.Tokens;
 
 namespace ServerCentralino.Services
 {
@@ -99,6 +100,7 @@ namespace ServerCentralino.Services
 
             string uniqueId = e.UniqueId;
             string _callerNumber = e.CallerIdNum;
+            bool flag_interno = false;
 
             // Verifica se il canale è il destinatario della chiamata
             if (e.Channel.StartsWith("PJSIP/4") || e.Channel.StartsWith("SIP/4"))
@@ -108,7 +110,8 @@ namespace ServerCentralino.Services
                 if ((_callerNumber.Length == 3 || _callerNumber.Length == 4) && _callerNumber.StartsWith("4"))
                 {
                     _logger.LogInformation($"Chiamata da interno: {_callerNumber}");
-                    return;
+                    flag_interno |= true;
+                    // return;
                 }
 
                 // Controllo se il numero è lungo 11 cifre e inizia con 0, 1 o 2
@@ -144,7 +147,15 @@ namespace ServerCentralino.Services
 
                 var _contatto = await _callStatisticsService.CercaContattoAsync(_callerNumber);
                 string ragioneSociale = _contatto != null ? _contatto.RagioneSociale : "Non registrato";
-                await _callStatisticsService.RegisterCall(_callerNumber, ragioneSociale, 0, callData[uniqueId].StartTime); // Registra la chiamata
+
+                string? tipoChiamata = "Unknown";
+                if (_contatto != null)
+                {
+                    tipoChiamata = _contatto.Interno == 1 ? "Uscita" : "Entrata";
+                }
+
+                string calleeNumber = e.CallerIdNum;
+                await _callStatisticsService.RegisterCall(calleeNumber, _callerNumber, ragioneSociale, 0, callData[uniqueId].StartTime, tipoChiamata); // Registra la chiamata
 
                 _logger.LogInformation($"Chiamata iniziata: {_callerNumber}, UniqueId: {uniqueId}");
             }
@@ -174,8 +185,28 @@ namespace ServerCentralino.Services
 
             if (contatto != null)
             {
-                _logger.LogInformation($"Trovato nel database: {contatto.RagioneSociale}, {contatto.Citta}");
-                callerIdPersonalizzato = $"{numeroChiamante} - {contatto.RagioneSociale} ({contatto.Citta})"; //({contatto.Citta})";
+                // Sostituisci caratteri accentati in ragione sociale e città
+                string ragioneSocialeClean = ReplaceAccentedChars(contatto.RagioneSociale);
+                string cittaClean = ReplaceAccentedChars(contatto.Citta);
+
+                if (flag_interno)
+                {
+                    _logger.LogInformation($"1. Trovato nel database: {ragioneSocialeClean}, {cittaClean}");
+                    callerIdPersonalizzato = $"{ragioneSocialeClean} ({cittaClean})";
+                }
+                else
+                {
+                    if (string.IsNullOrEmpty(ragioneSocialeClean) || string.IsNullOrEmpty(cittaClean))
+                    {
+                        _logger.LogInformation($"2. Trovato nel database: {ragioneSocialeClean}, {cittaClean}");
+                        callerIdPersonalizzato = $"{numeroChiamante}";
+                    }
+                    else
+                    {
+                        _logger.LogInformation($"3. Trovato nel database: {ragioneSocialeClean}, {cittaClean}");
+                        callerIdPersonalizzato = $"{numeroChiamante} - {ragioneSocialeClean} ({cittaClean})";
+                    }
+                }
             }
             else
             {
@@ -229,6 +260,31 @@ namespace ServerCentralino.Services
                 // Rimuovi la voce da callData dopo averla elaborata
                 callData.Remove(uniqueId);
             }
+        }
+
+        private string ReplaceAccentedChars(string input)
+        {
+            if (string.IsNullOrEmpty(input))
+                return input;
+
+            var accentedChars = new Dictionary<char, string>()
+            {
+                {'à', "a'"}, {'è', "e'"}, {'é', "e'"}, {'ì', "i'"}, {'ò', "o'"}, {'ù', "u'"},
+                {'À', "A'"}, {'È', "E'"}, {'É', "E'"}, {'Ì', "I'"}, {'Ò', "O'"}, {'Ù', "U'"},
+                {'á', "a'"}, {'ë', "e'"}, {'ï', "i'"}, {'ö', "o'"}, {'ü', "u'"},
+                {'Á', "A'"}, {'Ë', "E'"}, {'Ï', "I'"}, {'Ö', "O'"}, {'Ü', "U'"}
+            };
+
+            var output = new System.Text.StringBuilder();
+            foreach (char c in input)
+            {
+                if (accentedChars.TryGetValue(c, out string replacement))
+                    output.Append(replacement);
+                else
+                    output.Append(c);
+            }
+
+            return output.ToString();
         }
     }
 }

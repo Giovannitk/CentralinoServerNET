@@ -59,7 +59,7 @@ namespace ServerCentralino.Services
             return null;
         }
 
-        public async Task RegisterCall(string numeroChiamante, string ragioneSociale, double durata, DateTime starttime)
+        public async Task RegisterCall(string numeroChiamato, string numeroChiamante, string ragioneSociale, double durata, DateTime starttime, string tipoChiamata)
         {
             try
             {
@@ -74,7 +74,7 @@ namespace ServerCentralino.Services
                             int idChiamante = await TrovaOInserisciNumeroAsync(connection, transaction, numeroChiamante);
 
                             // Trova o inserisce il numero del chiamato (puoi usare un valore predefinito o un altro numero)
-                            int idChiamato = await TrovaOInserisciNumeroAsync(connection, transaction, "0000000000"); // Usa un valore predefinito o personalizzato
+                            int idChiamato = await TrovaOInserisciNumeroAsync(connection, transaction, numeroChiamato); // Usa un valore predefinito o personalizzato
 
                             // Data di arrivo della chiamata
                             DateTime dataArrivo = starttime;
@@ -88,7 +88,7 @@ namespace ServerCentralino.Services
                             {
                                 command.Parameters.AddWithValue("@chiamante", idChiamante);
                                 command.Parameters.AddWithValue("@chiamato", idChiamato);
-                                command.Parameters.AddWithValue("@tipo", "Entrata"); // Tipo di chiamata (puoi personalizzarlo)
+                                command.Parameters.AddWithValue("@tipo", tipoChiamata); // Tipo di chiamata (puoi personalizzarlo)
                                 command.Parameters.AddWithValue("@arrivo", dataArrivo); // Data di arrivo della chiamata
                                 command.Parameters.AddWithValue("@fine", dataArrivo); // Data di fine chiamata inizialmente uguale a dataArrivo
 
@@ -326,14 +326,133 @@ namespace ServerCentralino.Services
                 return connection.Query<CallRecord>(query).ToList();
             }
         }
+
+        public async Task<bool> AggiungiContattoAsync(string numeroContatto, string ragioneSociale, string citta, int? interno)
+        {
+            try
+            {
+                using (var connection = new SqlConnection(_connectionString))
+                {
+                    await connection.OpenAsync();
+
+                    string query = @"
+                IF EXISTS (SELECT 1 FROM Rubrica WHERE NumeroContatto = @numero)
+                BEGIN
+                    UPDATE Rubrica 
+                    SET RagioneSociale = @ragioneSociale, 
+                        CittaProvenienza = @citta,
+                        Interno = @interno
+                    WHERE NumeroContatto = @numero
+                END
+                ELSE
+                BEGIN
+                    INSERT INTO Rubrica (NumeroContatto, RagioneSociale, CittaProvenienza, Interno)
+                    VALUES (@numero, @ragioneSociale, @citta, @interno)
+                END";
+
+                    using (var command = new SqlCommand(query, connection))
+                    {
+                        command.Parameters.AddWithValue("@numero", numeroContatto);
+                        command.Parameters.AddWithValue("@ragioneSociale", (object)ragioneSociale ?? DBNull.Value);
+                        command.Parameters.AddWithValue("@citta", (object)citta ?? DBNull.Value);
+                        command.Parameters.AddWithValue("@interno", (object)interno ?? DBNull.Value);
+
+                        await command.ExecuteNonQueryAsync();
+                        return true;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"Errore durante l'aggiunta/aggiornamento del contatto: {ex.Message}");
+                return false;
+            }
+        }
+
+        public async Task<Chiamata> GetChiamataByIdAsync(int id)
+        {
+            try
+            {
+                using (var connection = new SqlConnection(_connectionString))
+                {
+                    await connection.OpenAsync();
+
+                    string query = @"
+                SELECT c.ID, c.TipoChiamata, c.DataArrivoChiamata, c.DataFineChiamata, c.Extra,
+                       r1.NumeroContatto AS NumeroChiamante, r2.NumeroContatto AS NumeroChiamato
+                FROM Chiamate c
+                INNER JOIN Rubrica r1 ON c.NumeroChiamanteID = r1.ID
+                INNER JOIN Rubrica r2 ON c.NumeroChiamatoID = r2.ID
+                WHERE c.ID = @id";
+
+                    using (var command = new SqlCommand(query, connection))
+                    {
+                        command.Parameters.AddWithValue("@id", id);
+
+                        using (var reader = await command.ExecuteReaderAsync())
+                        {
+                            if (await reader.ReadAsync())
+                            {
+                                return new Chiamata
+                                {
+                                    ID = reader.GetInt32(0),
+                                    TipoChiamata = reader["TipoChiamata"].ToString(),
+                                    DataArrivoChiamata = reader.GetDateTime(2),
+                                    DataFineChiamata = reader.GetDateTime(3),
+                                    Extra = reader["Extra"] != DBNull.Value ? reader["Extra"].ToString() : null,
+                                    NumeroChiamante = reader["NumeroChiamante"].ToString(),
+                                    NumeroChiamato = reader["NumeroChiamato"].ToString()
+                                };
+                            }
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"Errore nel recupero della chiamata: {ex.Message}");
+            }
+
+            return null;
+        }
+
+        public async Task<bool> UpdateCallExtraAsync(int callId, string location)
+        {
+            try
+            {
+                using (var connection = new SqlConnection(_connectionString))
+                {
+                    await connection.OpenAsync();
+
+                    string query = @"
+                UPDATE Chiamate
+                SET Extra = @location
+                WHERE ID = @id";
+
+                    using (var command = new SqlCommand(query, connection))
+                    {
+                        command.Parameters.AddWithValue("@location", location);
+                        command.Parameters.AddWithValue("@id", callId);
+
+                        int rowsAffected = await command.ExecuteNonQueryAsync();
+                        return rowsAffected > 0;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"Errore durante l'aggiornamento della località della chiamata: {ex.Message}");
+                return false;
+            }
+        }
     }
 
     public class Contatto
     {
         public string? RagioneSociale { get; set; }
         public string? Citta { get; set; }
-
         public string? NumeroContatto { get; set; }
+        public int? Interno { get; set; }
     }
 
     public class Chiamata 
@@ -349,6 +468,9 @@ namespace ServerCentralino.Services
         public string? NumeroChiamante { get; set; }
 
         public string? NumeroChiamato { get; set; }
+
+        // Campo da aggiornare col comune da dove sta chiamando il chiamante, dopo l'arrivo e la fine della chiamata.
+        public string? Extra { get; set; }
     }
 
     public class CallRecord
@@ -359,5 +481,8 @@ namespace ServerCentralino.Services
         public string? TipoChiamata { get; set; }
         public DateTime DataArrivoChiamata { get; set; }
         public DateTime DataFineChiamata { get; set; }
+
+        // Campo da aggiornare col comune da dove sta chiamando il chiamante, dopo l'arrivo e la fine della chiamata.
+        public string? Extra { get; set; }
     }
 } 
