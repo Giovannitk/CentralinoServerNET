@@ -141,8 +141,8 @@ namespace ServerCentralino.Controllers
 
             try
             {
-                // Implementare un metodo in DatabaseService per aggiornare il campo Extra di una chiamata
-                bool success = await _callStatisticsService.UpdateCallExtraAsync(request.CallId, request.Location);
+                
+                bool success = await _callStatisticsService.UpdateCallLocationAsync(request.CallId, request.Location);
 
                 if (success)
                 {

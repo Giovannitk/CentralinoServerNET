@@ -2,6 +2,15 @@ using ServerCentralino.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Configurazione logging con timestamp
+builder.Logging.AddSimpleConsole(options =>
+{
+    options.TimestampFormat = "[yyyy-MM-dd HH:mm:ss] ";
+    options.IncludeScopes = false;
+    options.SingleLine = true;
+    options.UseUtcTimestamp = false;
+});
+
 // Registrazione di AmiService e AmiBackgroundService
 builder.Services.AddSingleton<ServiceCall>();
 builder.Services.AddHostedService<AmiBackgroundService>();

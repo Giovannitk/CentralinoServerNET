@@ -17,9 +17,29 @@ namespace ServerCentralino.Services
 
         private class CallInfo
         {
-            public int Count { get; set; }
-            public TimeSpan TotalDuration { get; set; }
-            public DateTime StartTime { get; set; }
+            public int Count { get; set; }              // Contatore delle occorrenze
+            public TimeSpan TotalDuration { get; set; } // Durata totale (se ancora necessaria)
+            public DateTime StartTime { get; set; }     // Timestamp di inizio chiamata
+
+            // Nuovi campi aggiunti
+            public string CallerNumber { get; set; }    // Numero del chiamante
+            public string CalleeNumber { get; set; }    // Numero del chiamato (se disponibile)
+            public string LinkedId { get; set; }        // ID collegato per correlazione eventi
+            public string Channel { get; set; }         // Canale della chiamata
+            public string CallType { get; set; }       // Tipo chiamata (Entrata/Uscita)
+
+            // Costruttore per inizializzare i valori di default
+            public CallInfo()
+            {
+                Count = 1;
+                TotalDuration = TimeSpan.Zero;
+                StartTime = DateTime.Now;
+                CallerNumber = string.Empty;
+                CalleeNumber = string.Empty;
+                LinkedId = string.Empty;
+                Channel = string.Empty;
+                CallType = "Unknown";
+            }
         }
 
         public ServiceCall(IConfiguration configuration, ILogger<ServiceCall> logger, DatabaseService callStatisticsService)
@@ -59,6 +79,8 @@ namespace ServerCentralino.Services
                 //_manager.DialBegin += HandleDialBeginEvent;
                 _manager.Hangup += HandleHangupEvent; // Aggiungi questa linea
 
+                _manager.DialBegin += OnDialBegin;
+
                 _logger.LogInformation("AMI Service started and listening for events...");
             }
             catch (Exception ex)
@@ -96,22 +118,24 @@ namespace ServerCentralino.Services
 
         private async void OnNewChannel(object sender, NewChannelEvent e)
         {
-            _logger.LogInformation($"Nuovo canale attivo: {e.Channel} - id:{e.UniqueId}");
+            _logger.LogInformation($"1. Nuovo canale attivo: {e.Channel} - id:{e.UniqueId}");
 
-            string uniqueId = e.UniqueId;
+            // Recupera il linkedid dagli attributi se presente
+            string linkedId = e.Attributes.ContainsKey("linkedid") ? e.Attributes["linkedid"] : null;
+            string callKey = !string.IsNullOrEmpty(linkedId) ? linkedId : e.UniqueId;
+
             string _callerNumber = e.CallerIdNum;
             bool flag_interno = false;
 
             // Verifica se il canale è il destinatario della chiamata
             if (e.Channel.StartsWith("PJSIP/4") || e.Channel.StartsWith("SIP/4"))
             {
-                _logger.LogInformation("Chiamata da interno.");
+                _logger.LogInformation("2.1. Chiamata da interno.");
 
                 if ((_callerNumber.Length == 3 || _callerNumber.Length == 4) && _callerNumber.StartsWith("4"))
                 {
-                    _logger.LogInformation($"Chiamata da interno: {_callerNumber}");
-                    flag_interno |= true;
-                    // return;
+                    _logger.LogInformation($"2.1.1. Chiamata da interno: {_callerNumber}");
+                    flag_interno = true;
                 }
 
                 // Controllo se il numero è lungo 11 cifre e inizia con 0, 1 o 2
@@ -119,10 +143,9 @@ namespace ServerCentralino.Services
                     (_callerNumber.StartsWith("0") || _callerNumber.StartsWith("1") || _callerNumber.StartsWith("2")))
                 {
                     var _contatto = await _callStatisticsService.CercaContattoAsync(_callerNumber);
-
                     if (_contatto != null)
                     {
-                        _logger.LogInformation($"Numero modificato per la ricerca: {_callerNumber} -> {_callerNumber.Substring(1)}");
+                        _logger.LogInformation($"2.1.2.1. Numero modificato per la ricerca: {_callerNumber} -> {_callerNumber.Substring(1)}");
                         _callerNumber = _callerNumber.Substring(1); // Prende solo gli ultimi 10 caratteri   
                     }
                 }
@@ -130,135 +153,184 @@ namespace ServerCentralino.Services
 
             if (_callerNumber == "1000" || e.Channel.StartsWith("PJSIP/1000") || e.Channel.StartsWith("SIP/1000"))
             {
-                _logger.LogInformation($"Chiamata da interno: {_callerNumber}");
+                _logger.LogInformation($"3. Chiamata da interno: {_callerNumber}");
                 return;
             }
 
-            if (!string.IsNullOrEmpty(_callerNumber) && !processedUniqueIds.Contains(uniqueId))
+            if (!string.IsNullOrEmpty(_callerNumber) && !processedUniqueIds.Contains(callKey))
             {
-                processedUniqueIds.Add(uniqueId); // Segna l'UniqueId come processato
+                processedUniqueIds.Add(callKey); // Segna la chiave come processata
 
-                if (!callData.ContainsKey(uniqueId))
+                if (!callData.ContainsKey(callKey))
                 {
-                    callData[uniqueId] = new CallInfo { Count = 0, TotalDuration = TimeSpan.Zero };
+                    callData[callKey] = new CallInfo
+                    {
+                        Count = 0,
+                        TotalDuration = TimeSpan.Zero,
+                        StartTime = DateTime.Now,
+                        CallerNumber = _callerNumber,
+                        LinkedId = linkedId
+                    };
                 }
-                callData[uniqueId].Count++;
-                callData[uniqueId].StartTime = DateTime.Now;
+                else
+                {
+                    callData[callKey].Count++;
+                }
 
                 var _contatto = await _callStatisticsService.CercaContattoAsync(_callerNumber);
                 string ragioneSociale = _contatto != null ? _contatto.RagioneSociale : "Non registrato";
 
-                string? tipoChiamata = "Unknown";
+                string tipoChiamata = "Unknown";
                 if (_contatto != null)
                 {
                     tipoChiamata = _contatto.Interno == 1 ? "Uscita" : "Entrata";
                 }
 
-                string calleeNumber = e.CallerIdNum;
-                await _callStatisticsService.RegisterCall(calleeNumber, _callerNumber, ragioneSociale, 0, callData[uniqueId].StartTime, tipoChiamata); // Registra la chiamata
+                await _callStatisticsService.RegisterCall(
+                    _callerNumber,
+                    string.Empty, // CalleeNumber vuoto inizialmente
+                    ragioneSociale,
+                    string.Empty, // Ragione sociale chiamato vuota inizialmente
+                    callData[callKey].StartTime,
+                    tipoChiamata,
+                    callKey,
+                    ragioneSociale); // Passa callKey (linkedId o UniqueId)
 
-                _logger.LogInformation($"Chiamata iniziata: {_callerNumber}, UniqueId: {uniqueId}");
+                _logger.LogInformation($"4.3. Chiamata iniziata: {_callerNumber}, Key: {callKey} (LinkedId: {linkedId ?? "null"}, UniqueId: {e.UniqueId})");
             }
 
-            string numeroChiamante = e.CallerIdNum; // Numero del chiamante
-            string channel = e.Channel; // Canale della chiamata in arrivo
+            // Resto del codice per la gestione del CallerID...
+            string numeroChiamante = e.CallerIdNum;
+            string channel = e.Channel;
 
-            // Controllo se il numero è lungo 11 cifre e inizia con 0, 1 o 2
             if (!string.IsNullOrEmpty(numeroChiamante) && numeroChiamante.Length == 11 &&
                 (numeroChiamante.StartsWith("0") || numeroChiamante.StartsWith("1") || numeroChiamante.StartsWith("2")))
             {
-                _logger.LogInformation($"Numero modificato per la ricerca: {numeroChiamante} -> {numeroChiamante.Substring(1)}");
-                numeroChiamante = numeroChiamante.Substring(1); // Prende solo gli ultimi 10 caratteri
+                _logger.LogInformation($"5. Numero modificato per la ricerca: {numeroChiamante} -> {numeroChiamante.Substring(1)}");
+                numeroChiamante = numeroChiamante.Substring(1);
             }
 
-            // Cerca il chiamante nel database
             var contatto = await _callStatisticsService.CercaContattoAsync(numeroChiamante);
-
             string callerIdPersonalizzato;
 
             if (!e.Attributes.TryGetValue("destchannel", out var destChannel) || string.IsNullOrEmpty(destChannel))
             {
-                _logger.LogWarning($"Canale di destinazione {destChannel} non trovato negli attributi dell'evento. CallerID non modificato.");
+                _logger.LogWarning($"6. Canale di destinazione {destChannel} non trovato negli attributi dell'evento. CallerID non modificato.");
             }
 
-            _logger.LogInformation($"Chiamata in arrivo da: {e.CallerIdNum} - canale({e.Channel}) verso il canale: {channel}");
+            _logger.LogInformation($"7. Chiamata in arrivo da: {e.CallerIdNum} - canale({e.Channel}) verso il canale: {channel}");
 
             if (contatto != null)
             {
-                // Sostituisci caratteri accentati in ragione sociale e città
                 string ragioneSocialeClean = ReplaceAccentedChars(contatto.RagioneSociale);
                 string cittaClean = ReplaceAccentedChars(contatto.Citta);
 
                 if (flag_interno)
                 {
-                    _logger.LogInformation($"1. Trovato nel database: {ragioneSocialeClean}, {cittaClean}");
+                    _logger.LogInformation($"8.1. Trovato nel database: {ragioneSocialeClean}, {cittaClean}");
                     callerIdPersonalizzato = $"{ragioneSocialeClean} ({cittaClean})";
                 }
                 else
                 {
                     if (string.IsNullOrEmpty(ragioneSocialeClean) || string.IsNullOrEmpty(cittaClean))
                     {
-                        _logger.LogInformation($"2. Trovato nel database: {ragioneSocialeClean}, {cittaClean}");
+                        _logger.LogInformation($"8.2.1 Trovato nel database: {ragioneSocialeClean}, {cittaClean}");
                         callerIdPersonalizzato = $"{numeroChiamante}";
                     }
                     else
                     {
-                        _logger.LogInformation($"3. Trovato nel database: {ragioneSocialeClean}, {cittaClean}");
+                        _logger.LogInformation($"8.2.2. Trovato nel database: {ragioneSocialeClean}, {cittaClean}");
                         callerIdPersonalizzato = $"{numeroChiamante} - {ragioneSocialeClean} ({cittaClean})";
                     }
                 }
             }
             else
             {
-                _logger.LogInformation("Numero non trovato nel database. Impostazione CallerID predefinito.");
+                _logger.LogInformation("8.3. Numero non trovato nel database. Impostazione CallerID predefinito.");
                 callerIdPersonalizzato = $"{numeroChiamante} - Non registrato";
             }
 
-            // Modifica il CallerId sul canale di destinazione
             var setCallerId = new SetVarAction
             {
-                Channel = channel, // Canale di destinazione (telefono di ufficio)
+                Channel = channel,
                 Variable = "CALLERID(name)",
                 Value = callerIdPersonalizzato
             };
 
             try
             {
-                // Invia l'azione in modo asincrono
                 _manager.SendAction(setCallerId);
-                _logger.LogInformation($"CallerID aggiornato: {callerIdPersonalizzato}");
+                _logger.LogInformation($"9. CallerID aggiornato: {callerIdPersonalizzato}");
             }
             catch (System.TimeoutException ex)
             {
-                _logger.LogError($"Timeout durante l'aggiornamento del CallerID: {ex.Message}");
+                _logger.LogError($"10. Timeout durante l'aggiornamento del CallerID: {ex.Message}");
             }
             catch (Exception ex)
             {
-                _logger.LogError($"Errore durante l'aggiornamento del CallerID: {ex.Message}");
+                _logger.LogError($"11. Errore durante l'aggiornamento del CallerID: {ex.Message}");
             }
         }
 
+        private void OnDialBegin(object sender, DialBeginEvent e)
+        {
+            _logger.LogInformation($"D: Evento ricevuto: {e.GetType().Name}");
+
+            //string log_attributes = "";
+            //foreach (var attribute in e.Attributes)
+            //{
+            //    log_attributes += $"Attributo: {attribute.Key} = {attribute.Value}";
+            //}
+
+            //_logger.LogInformation($"D: Attributi: {log_attributes}");
+
+            //string numeroChiamante = e.CallerIdNum; // Numero del chiamante
+            //string channel = e.Channel; // Canale della chiamata in arrivo
+            //_logger.LogInformation($"D: {numeroChiamante} - {channel}");
+        }
 
         private async void HandleHangupEvent(object sender, HangupEvent e)
         {
             _logger.LogInformation($"Catturato evento hangup: {e.Channel} - id:{e.UniqueId}");
 
-            string uniqueId = e.UniqueId;
+            string hangupUniqueId = e.UniqueId;
+            string linkedId = e.Attributes.ContainsKey("linkedid") ? e.Attributes["linkedid"] : null;
             string callerNumber = e.CallerIdNum;
+            DateTime endTime = DateTime.Now;
 
-            if (!string.IsNullOrEmpty(callerNumber) && callData.ContainsKey(uniqueId))
+            // Cerchiamo prima per linkedId (se esiste), altrimenti per hangupUniqueId
+            string callKey = !string.IsNullOrEmpty(linkedId) ? linkedId : hangupUniqueId;
+
+            if (!string.IsNullOrEmpty(callerNumber))
             {
-                DateTime endTime = DateTime.Now;
-                TimeSpan duration = endTime - callData[uniqueId].StartTime;
-                callData[uniqueId].TotalDuration += duration;
+                // Cerchiamo nella callData usando prima linkedId, poi hangupUniqueId
+                if (callData.TryGetValue(callKey, out var callInfo))
+                {
+                    TimeSpan duration = endTime - callInfo.StartTime;
 
-                _logger.LogInformation($"Chiamata terminata: {callerNumber}, UniqueId: {uniqueId}, Durata: {duration.TotalSeconds} secondi");
+                    _logger.LogInformation($"Chiamata terminata: {callerNumber}, " +
+                                        $"UniqueId: {hangupUniqueId}, " +
+                                        $"LinkedId: {linkedId}, " +
+                                        $"Durata: {duration.TotalSeconds} secondi");
 
-                // Aggiorna la durata della chiamata nel registro
-                await _callStatisticsService.UpdateCallDuration(callerNumber, duration.TotalSeconds, endTime);
+                    // Aggiorniamo la chiamata nel database
+                    await _callStatisticsService.UpdateCallEndTime(
+                        callerNumber,
+                        callInfo.StartTime,
+                        endTime,
+                        hangupUniqueId,
+                        linkedId);
 
-                // Rimuovi la voce da callData dopo averla elaborata
-                callData.Remove(uniqueId);
+                    // Rimuoviamo la chiamata dalla callData
+                    callData.Remove(callKey);
+                }
+                else
+                {
+                    _logger.LogWarning($"Nessuna chiamata attiva trovata per: " +
+                                     $"Numero: {callerNumber}, " +
+                                     $"HangupUniqueId: {hangupUniqueId}, " +
+                                     $"LinkedId: {linkedId ?? "null"}");
+                }
             }
         }
 

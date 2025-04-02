@@ -53,13 +53,13 @@ namespace ServerCentralino.Services
             }
             catch (Exception ex)
             {
-                _logger.LogError($"Errore di connessione al database: {ex.Message}");
+                _logger.LogError($"2.1.3. 4.1. 5.1. Errore di connessione al database: {ex.Message}");
             }
 
             return null;
         }
 
-        public async Task RegisterCall(string numeroChiamato, string numeroChiamante, string ragioneSociale, double durata, DateTime starttime, string tipoChiamata)
+        public async Task RegisterCall(string numeroChiamante, string numeroChiamato, string ragioneSocialeChiamante, string ragioneSocialeChiamato, DateTime starttime, string tipoChiamata, string uniqueId, string locazione)
         {
             try
             {
@@ -71,18 +71,18 @@ namespace ServerCentralino.Services
                         try
                         {
                             // Trova o inserisce il numero del chiamante nella Rubrica
-                            int idChiamante = await TrovaOInserisciNumeroAsync(connection, transaction, numeroChiamante);
+                            string idChiamante = await TrovaOInserisciNumeroAsync(connection, transaction, numeroChiamante);
 
                             // Trova o inserisce il numero del chiamato (puoi usare un valore predefinito o un altro numero)
-                            int idChiamato = await TrovaOInserisciNumeroAsync(connection, transaction, numeroChiamato); // Usa un valore predefinito o personalizzato
+                            string idChiamato = "0000000000"; //await TrovaOInserisciNumeroAsync(connection, transaction, numeroChiamato); // Usa un valore predefinito o personalizzato
 
                             // Data di arrivo della chiamata
                             DateTime dataArrivo = starttime;
 
                             // Inserisce la chiamata nella tabella Chiamate
                             string queryInserisciChiamata = @"
-                        INSERT INTO Chiamate (NumeroChiamanteID, NumeroChiamatoID, TipoChiamata, DataArrivoChiamata, DataFineChiamata)
-                        VALUES (@chiamante, @chiamato, @tipo, @arrivo, @fine)";
+                        INSERT INTO Chiamate (NumeroChiamante, NumeroChiamato, TipoChiamata, DataArrivoChiamata, DataFineChiamata, RagioneSocialeChiamante, RagioneSocialeChiamato, UniqueId, Locazione)
+                        VALUES (@chiamante, @chiamato, @tipo, @arrivo, @fine, @rsChiamante, @rsChiamato, @uniqueid, @locazione)";
 
                             using (var command = new SqlCommand(queryInserisciChiamata, connection, transaction))
                             {
@@ -91,17 +91,21 @@ namespace ServerCentralino.Services
                                 command.Parameters.AddWithValue("@tipo", tipoChiamata); // Tipo di chiamata (puoi personalizzarlo)
                                 command.Parameters.AddWithValue("@arrivo", dataArrivo); // Data di arrivo della chiamata
                                 command.Parameters.AddWithValue("@fine", dataArrivo); // Data di fine chiamata inizialmente uguale a dataArrivo
+                                command.Parameters.AddWithValue("@rsChiamante", ragioneSocialeChiamante);
+                                command.Parameters.AddWithValue("@rsChiamato", ragioneSocialeChiamato);
+                                command.Parameters.AddWithValue("@uniqueid", uniqueId);
+                                command.Parameters.AddWithValue("@locazione", locazione);
 
                                 await command.ExecuteNonQueryAsync();
                             }
 
                             transaction.Commit();
-                            _logger.LogInformation($"Chiamata registrata: {numeroChiamante}, DataArrivo: {dataArrivo}");
+                            _logger.LogInformation($"4.2.1. Chiamata registrata: {numeroChiamante}, DataArrivo: {dataArrivo}");
                         }
                         catch (Exception ex)
                         {
                             transaction.Rollback();
-                            _logger.LogError($"Errore durante la registrazione della chiamata: {ex.Message}");
+                            _logger.LogError($"4.2.2. Errore durante la registrazione della chiamata: {ex.Message}");
                         }
                     }
                 }
@@ -109,11 +113,11 @@ namespace ServerCentralino.Services
             
             catch (Exception ex)
             {
-                _logger.LogError($"Errore di connessione al database: {ex.Message}");
+                _logger.LogError($"4.2.3. Errore di connessione al database: {ex.Message}");
             }
         }
 
-        public async Task UpdateCallDuration(string numeroChiamante, double durata, DateTime endtime)
+        public async Task UpdateCallEndTime(string numeroChiamante, DateTime startTime, DateTime endTime, string hangupUniqueId, string linkedId = null)
         {
             try
             {
@@ -124,64 +128,68 @@ namespace ServerCentralino.Services
                     {
                         try
                         {
-                            // Trova l'ID del chiamante nella Rubrica
-                            int idChiamante = await TrovaOInserisciNumeroAsync(connection, transaction, numeroChiamante);
-
-                            // Trova la chiamata più recente per il chiamante
+                            // Cerchiamo la chiamata originale usando prima il linkedId se disponibile,
+                            // altrimenti usiamo l'hangupUniqueId
                             string queryTrovaChiamata = @"
-                        SELECT TOP 1 ID, DataArrivoChiamata
+                        SELECT TOP 1 ID
                         FROM Chiamate
-                        WHERE NumeroChiamanteID = @chiamante
-                        ORDER BY DataArrivoChiamata DESC";
+                        WHERE NumeroChiamante = @numeroChiamante
+                        AND DataArrivoChiamata = @startTime
+                        AND (UniqueId = @linkedId OR UniqueId = @hangupUniqueId)
+                        AND DataFineChiamata IS NULL";
 
                             int idChiamata = 0;
-                            DateTime dataArrivo = endtime;
 
                             using (var command = new SqlCommand(queryTrovaChiamata, connection, transaction))
                             {
-                                command.Parameters.AddWithValue("@chiamante", idChiamante);
+                                command.Parameters.AddWithValue("@numeroChiamante", numeroChiamante);
+                                command.Parameters.AddWithValue("@startTime", startTime);
+                                command.Parameters.AddWithValue("@hangupUniqueId", hangupUniqueId);
+                                command.Parameters.AddWithValue("@linkedId", linkedId ?? hangupUniqueId); // Se linkedId è null, usa hangupUniqueId
 
                                 using (var reader = await command.ExecuteReaderAsync())
                                 {
                                     if (await reader.ReadAsync())
                                     {
                                         idChiamata = reader.GetInt32(0);
-                                        dataArrivo = reader.GetDateTime(1);
                                     }
                                 }
                             }
 
                             if (idChiamata > 0)
                             {
-                                // Calcola la data di fine chiamata
-                                DateTime dataFine = dataArrivo.AddSeconds(durata);
-
-                                // Aggiorna la data di fine chiamata
+                                // Aggiorna solo la data di fine chiamata
                                 string queryAggiornaChiamata = @"
                             UPDATE Chiamate
-                            SET DataFineChiamata = @fine
+                            SET DataFineChiamata = @endTime
                             WHERE ID = @id";
 
                                 using (var command = new SqlCommand(queryAggiornaChiamata, connection, transaction))
                                 {
-                                    command.Parameters.AddWithValue("@fine", dataFine);
+                                    command.Parameters.AddWithValue("@endTime", endTime);
                                     command.Parameters.AddWithValue("@id", idChiamata);
 
                                     await command.ExecuteNonQueryAsync();
                                 }
 
                                 transaction.Commit();
-                                _logger.LogInformation($"Durata della chiamata aggiornata: {numeroChiamante}, Durata: {durata} secondi");
+                                _logger.LogInformation($"Chiamata aggiornata - Numero: {numeroChiamante}, " +
+                                    $"LinkedId: {linkedId}, HangupUniqueId: {hangupUniqueId}, " +
+                                    $"Fine chiamata: {endTime}");
                             }
                             else
                             {
-                                _logger.LogWarning($"Nessuna chiamata trovata per il numero: {numeroChiamante}");
+                                _logger.LogWarning($"Nessuna chiamata attiva trovata per: " +
+                                    $"Numero: {numeroChiamante}, " +
+                                    $"Data inizio: {startTime}, " +
+                                    $"LinkedId: {linkedId}, " +
+                                    $"HangupUniqueId: {hangupUniqueId}");
                             }
                         }
                         catch (Exception ex)
                         {
                             transaction.Rollback();
-                            _logger.LogError($"Errore durante l'aggiornamento della durata della chiamata: {ex.Message}");
+                            _logger.LogError($"Errore durante l'aggiornamento della chiamata: {ex.Message}");
                         }
                     }
                 }
@@ -242,59 +250,7 @@ namespace ServerCentralino.Services
             return chiamate;
         }
 
-        public async Task<bool> AggiungiChiamataAsync(string numeroChiamante, string numeroChiamato, string tipoChiamata, DateTime dataArrivo, DateTime dataFine)
-        {
-            try
-            {
-                using (var connection = new SqlConnection(_connectionString))
-                {
-                    await connection.OpenAsync();
-                    using (var transaction = connection.BeginTransaction())
-                    {
-                        try
-                        {
-                            // Recupera o inserisce il chiamante
-                            int idChiamante = await TrovaOInserisciNumeroAsync(connection, transaction, numeroChiamante);
-
-                            // Recupera o inserisce il chiamato
-                            int idChiamato = await TrovaOInserisciNumeroAsync(connection, transaction, numeroChiamato);
-
-                            // Inserisce la chiamata
-                            string queryInserisciChiamata = @"
-                        INSERT INTO Chiamate (NumeroChiamanteID, NumeroChiamatoID, TipoChiamata, DataArrivoChiamata, DataFineChiamata)
-                        VALUES (@chiamante, @chiamato, @tipo, @arrivo, @fine)";
-
-                            using (var command = new SqlCommand(queryInserisciChiamata, connection, transaction))
-                            {
-                                command.Parameters.AddWithValue("@chiamante", idChiamante);
-                                command.Parameters.AddWithValue("@chiamato", idChiamato);
-                                command.Parameters.AddWithValue("@tipo", tipoChiamata);
-                                command.Parameters.AddWithValue("@arrivo", dataArrivo);
-                                command.Parameters.AddWithValue("@fine", dataFine);
-
-                                await command.ExecuteNonQueryAsync();
-                            }
-
-                            transaction.Commit();
-                            return true;
-                        }
-                        catch (Exception ex)
-                        {
-                            transaction.Rollback();
-                            _logger.LogError($"Errore nell'inserimento della chiamata: {ex.Message}");
-                            return false;
-                        }
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError($"Errore nella connessione al database: {ex.Message}");
-                return false;
-            }
-        }
-
-        private async Task<int> TrovaOInserisciNumeroAsync(SqlConnection connection, SqlTransaction transaction, string numero)
+        private async Task<string> TrovaOInserisciNumeroAsync(SqlConnection connection, SqlTransaction transaction, string numero)
         {
             // Cerca il numero nella rubrica
             string queryCerca = "SELECT ID FROM Rubrica WHERE NumeroContatto = @numero";
@@ -304,7 +260,7 @@ namespace ServerCentralino.Services
                 var result = await command.ExecuteScalarAsync();
 
                 if (result != null)
-                    return Convert.ToInt32(result);
+                    return numero;
             }
 
             // Se non esiste, lo inserisce
@@ -312,7 +268,7 @@ namespace ServerCentralino.Services
             using (var command = new SqlCommand(queryInserisci, connection, transaction))
             {
                 command.Parameters.AddWithValue("@numero", numero);
-                return (int)await command.ExecuteScalarAsync();
+                return numero;
             }
 
         }
@@ -416,32 +372,70 @@ namespace ServerCentralino.Services
             return null;
         }
 
-        public async Task<bool> UpdateCallExtraAsync(int callId, string location)
+        public async Task<bool> UpdateCallLocationAsync(int callId, string location)
         {
             try
             {
                 using (var connection = new SqlConnection(_connectionString))
                 {
                     await connection.OpenAsync();
-
-                    string query = @"
-                UPDATE Chiamate
-                SET Extra = @location
-                WHERE ID = @id";
-
-                    using (var command = new SqlCommand(query, connection))
+                    using (var transaction = connection.BeginTransaction())
                     {
-                        command.Parameters.AddWithValue("@location", location);
-                        command.Parameters.AddWithValue("@id", callId);
+                        try
+                        {
+                            // Verifica prima che la chiamata esista
+                            string queryVerifica = @"
+                        SELECT COUNT(1) 
+                        FROM Chiamate 
+                        WHERE ID = @id";
 
-                        int rowsAffected = await command.ExecuteNonQueryAsync();
-                        return rowsAffected > 0;
+                            bool exists = false;
+
+                            using (var command = new SqlCommand(queryVerifica, connection, transaction))
+                            {
+                                command.Parameters.AddWithValue("@id", callId);
+                                exists = (int)await command.ExecuteScalarAsync() > 0;
+                            }
+
+                            if (exists)
+                            {
+                                // Aggiorna il campo Locazione
+                                string queryAggiorna = @"
+                            UPDATE Chiamate
+                            SET Locazione = @location
+                            WHERE ID = @id";
+
+                                using (var command = new SqlCommand(queryAggiorna, connection, transaction))
+                                {
+                                    command.Parameters.AddWithValue("@location", location);
+                                    command.Parameters.AddWithValue("@id", callId);
+
+                                    int rowsAffected = await command.ExecuteNonQueryAsync();
+
+                                    if (rowsAffected > 0)
+                                    {
+                                        transaction.Commit();
+                                        _logger.LogInformation($"Locazione aggiornata per chiamata ID: {callId}, Nuova locazione: {location}");
+                                        return true;
+                                    }
+                                }
+                            }
+
+                            _logger.LogWarning($"Nessuna chiamata trovata con ID: {callId}");
+                            return false;
+                        }
+                        catch (Exception ex)
+                        {
+                            transaction.Rollback();
+                            _logger.LogError($"Errore durante l'aggiornamento della locazione: {ex.Message}");
+                            return false;
+                        }
                     }
                 }
             }
             catch (Exception ex)
             {
-                _logger.LogError($"Errore durante l'aggiornamento della località della chiamata: {ex.Message}");
+                _logger.LogError($"Errore di connessione al database: {ex.Message}");
                 return false;
             }
         }
