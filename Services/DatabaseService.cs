@@ -117,86 +117,66 @@ namespace ServerCentralino.Services
             }
         }
 
-        public async Task UpdateCallEndTime(string numeroChiamante, DateTime startTime, DateTime endTime, string hangupUniqueId, string linkedId = null)
+        public async Task<bool> UpdateCallEndTimeAsync(
+            string linkedId,
+            DateTime endTime,
+            DateTime? startTime = null,
+            string callerNumber = null)
         {
             try
             {
                 using (var connection = new SqlConnection(_connectionString))
                 {
                     await connection.OpenAsync();
-                    using (var transaction = connection.BeginTransaction())
+
+                    string query = @"
+                UPDATE Chiamate
+                SET DataFineChiamata = @endTime
+                WHERE UniqueID = @linkedId
+                AND DataFineChiamata = DataArrivoChiamata"; // Solo se non modificato
+
+                    if (startTime.HasValue)
                     {
-                        try
+                        query += " AND DataArrivoChiamata = @startTime";
+                    }
+
+                    if (!string.IsNullOrEmpty(callerNumber))
+                    {
+                        query += " AND NumeroChiamante = @callerNumber";
+                    }
+
+                    using (var command = new SqlCommand(query, connection))
+                    {
+                        command.Parameters.AddWithValue("@endTime", endTime);
+                        command.Parameters.AddWithValue("@linkedId", linkedId);
+
+                        if (startTime.HasValue)
                         {
-                            // Cerchiamo la chiamata originale usando prima il linkedId se disponibile,
-                            // altrimenti usiamo l'hangupUniqueId
-                            string queryTrovaChiamata = @"
-                        SELECT TOP 1 ID
-                        FROM Chiamate
-                        WHERE NumeroChiamante = @numeroChiamante
-                        AND DataArrivoChiamata = @startTime
-                        AND (UniqueId = @linkedId OR UniqueId = @hangupUniqueId)
-                        AND DataFineChiamata IS NULL";
-
-                            int idChiamata = 0;
-
-                            using (var command = new SqlCommand(queryTrovaChiamata, connection, transaction))
-                            {
-                                command.Parameters.AddWithValue("@numeroChiamante", numeroChiamante);
-                                command.Parameters.AddWithValue("@startTime", startTime);
-                                command.Parameters.AddWithValue("@hangupUniqueId", hangupUniqueId);
-                                command.Parameters.AddWithValue("@linkedId", linkedId ?? hangupUniqueId); // Se linkedId è null, usa hangupUniqueId
-
-                                using (var reader = await command.ExecuteReaderAsync())
-                                {
-                                    if (await reader.ReadAsync())
-                                    {
-                                        idChiamata = reader.GetInt32(0);
-                                    }
-                                }
-                            }
-
-                            if (idChiamata > 0)
-                            {
-                                // Aggiorna solo la data di fine chiamata
-                                string queryAggiornaChiamata = @"
-                            UPDATE Chiamate
-                            SET DataFineChiamata = @endTime
-                            WHERE ID = @id";
-
-                                using (var command = new SqlCommand(queryAggiornaChiamata, connection, transaction))
-                                {
-                                    command.Parameters.AddWithValue("@endTime", endTime);
-                                    command.Parameters.AddWithValue("@id", idChiamata);
-
-                                    await command.ExecuteNonQueryAsync();
-                                }
-
-                                transaction.Commit();
-                                _logger.LogInformation($"Chiamata aggiornata - Numero: {numeroChiamante}, " +
-                                    $"LinkedId: {linkedId}, HangupUniqueId: {hangupUniqueId}, " +
-                                    $"Fine chiamata: {endTime}");
-                            }
-                            else
-                            {
-                                _logger.LogWarning($"Nessuna chiamata attiva trovata per: " +
-                                    $"Numero: {numeroChiamante}, " +
-                                    $"Data inizio: {startTime}, " +
-                                    $"LinkedId: {linkedId}, " +
-                                    $"HangupUniqueId: {hangupUniqueId}");
-                            }
+                            command.Parameters.AddWithValue("@startTime", startTime.Value);
                         }
-                        catch (Exception ex)
+
+                        if (!string.IsNullOrEmpty(callerNumber))
                         {
-                            transaction.Rollback();
-                            _logger.LogError($"Errore durante l'aggiornamento della chiamata: {ex.Message}");
+                            command.Parameters.AddWithValue("@callerNumber", callerNumber);
                         }
+
+                        int rowsAffected = await command.ExecuteNonQueryAsync();
+
+                        if (rowsAffected > 0)
+                        {
+                            _logger.LogInformation($"H: Chiamata {linkedId} aggiornata alle {endTime}");
+                            return true;
+                        }
+
+                        _logger.LogWarning($"H: Chiamata {linkedId} non aggiornata (già terminata o non trovata)");
+                        return false;
                     }
                 }
             }
             catch (Exception ex)
             {
-                _logger.LogError($"Errore di connessione al database: {ex.Message}");
+                _logger.LogError($"H: Errore aggiornamento fine chiamata {linkedId}: {ex.Message}");
+                return false;
             }
         }
 
@@ -230,7 +210,7 @@ namespace ServerCentralino.Services
                             {
                                 chiamate.Add(new Chiamata
                                 {
-                                    ID = reader.GetInt32(0),
+                                    //ID = reader.GetInt32(0),
                                     TipoChiamata = reader["TipoChiamata"].ToString(),
                                     DataArrivoChiamata = reader.GetDateTime(2),
                                     DataFineChiamata = reader.GetDateTime(3),
@@ -273,13 +253,13 @@ namespace ServerCentralino.Services
 
         }
 
-        public List<CallRecord> GetAllCalls()
+        public List<Chiamata> GetAllCalls()
         {
             using (var connection = new SqlConnection(_connectionString))
             {
                 connection.Open();
                 var query = "SELECT * FROM Chiamate"; // Assicurati che la tabella sia corretta
-                return connection.Query<CallRecord>(query).ToList();
+                return connection.Query<Chiamata>(query).ToList();
             }
         }
 
@@ -351,11 +331,11 @@ namespace ServerCentralino.Services
                             {
                                 return new Chiamata
                                 {
-                                    ID = reader.GetInt32(0),
+                                    //ID = reader.GetInt32(0),
                                     TipoChiamata = reader["TipoChiamata"].ToString(),
                                     DataArrivoChiamata = reader.GetDateTime(2),
                                     DataFineChiamata = reader.GetDateTime(3),
-                                    Extra = reader["Extra"] != DBNull.Value ? reader["Extra"].ToString() : null,
+                                    //Extra = reader["Extra"] != DBNull.Value ? reader["Extra"].ToString() : null,
                                     NumeroChiamante = reader["NumeroChiamante"].ToString(),
                                     NumeroChiamato = reader["NumeroChiamato"].ToString()
                                 };
@@ -439,6 +419,68 @@ namespace ServerCentralino.Services
                 return false;
             }
         }
+
+        public async Task<bool> UpdateCalledNumberAsync(string linkedId, string calledNumber, string calledName)
+        {
+            try
+            {
+                using (var connection = new SqlConnection(_connectionString))
+                {
+                    await connection.OpenAsync();
+
+                    string query = @"
+                UPDATE Chiamate
+                SET 
+                    NumeroChiamato = @calledNumber,
+                    RagioneSocialeChiamato = @calledName
+                WHERE UniqueID = @linkedId";
+
+                    using (var command = new SqlCommand(query, connection))
+                    {
+                        command.Parameters.AddWithValue("@calledNumber", calledNumber);
+                        command.Parameters.AddWithValue("@calledName", calledName);
+                        command.Parameters.AddWithValue("@linkedId", linkedId);
+
+                        int rowsAffected = await command.ExecuteNonQueryAsync();
+                        return rowsAffected > 0;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"Errore durante l'aggiornamento del numero chiamato: {ex.Message}");
+                return false;
+            }
+        }
+
+        public async Task<bool> CheckExistingCallAsync(string callKey)
+        {
+            try
+            {
+                using (var connection = new SqlConnection(_connectionString))
+                {
+                    await connection.OpenAsync();
+
+                    string query = @"
+                SELECT COUNT(1) 
+                FROM Chiamate 
+                WHERE UniqueID = @callKey
+                AND DataArrivoChiamata >= DATEADD(minute, -5, GETDATE())";
+
+                    using (var command = new SqlCommand(query, connection))
+                    {
+                        command.Parameters.AddWithValue("@callKey", callKey);
+                        int count = (int)await command.ExecuteScalarAsync();
+                        return count > 0;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"Errore durante la verifica della chiamata esistente: {ex.Message}");
+                return false; // In caso di errore, procedi comunque
+            }
+        }
     }
 
     public class Contatto
@@ -449,23 +491,23 @@ namespace ServerCentralino.Services
         public int? Interno { get; set; }
     }
 
-    public class Chiamata 
-    {
-        public int? ID { get; set; }
+    //public class Chiamata 
+    //{
+    //    public int? ID { get; set; }
 
-        public string? TipoChiamata { get; set; }
+    //    public string? TipoChiamata { get; set; }
 
-        public DateTime? DataArrivoChiamata { get; set; }
+    //    public DateTime? DataArrivoChiamata { get; set; }
 
-        public DateTime? DataFineChiamata { get; set; }
+    //    public DateTime? DataFineChiamata { get; set; }
 
-        public string? NumeroChiamante { get; set; }
+    //    public string? NumeroChiamante { get; set; }
 
-        public string? NumeroChiamato { get; set; }
+    //    public string? NumeroChiamato { get; set; }
 
-        // Campo da aggiornare col comune da dove sta chiamando il chiamante, dopo l'arrivo e la fine della chiamata.
-        public string? Extra { get; set; }
-    }
+    //    // Campo da aggiornare col comune da dove sta chiamando il chiamante, dopo l'arrivo e la fine della chiamata.
+    //    public string? Extra { get; set; }
+    //}
 
     public class CallRecord
     {
@@ -478,5 +520,18 @@ namespace ServerCentralino.Services
 
         // Campo da aggiornare col comune da dove sta chiamando il chiamante, dopo l'arrivo e la fine della chiamata.
         public string? Extra { get; set; }
+    }
+
+    public class Chiamata
+    {
+        public int Id { get; set; }
+        public string? NumeroChiamante { get; set; }
+        public string? NumeroChiamato { get; set; }
+        public string? RagioneSocialeChiamante { get; set; }
+        public string? RagioneSocialeChiamato { get; set; }
+        public DateTime DataArrivoChiamata { get; set; }
+        public DateTime DataFineChiamata { get; set; }
+        public string? TipoChiamata { get; set; }
+        public string? Locazione { get; set; }
     }
 } 

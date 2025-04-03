@@ -139,16 +139,16 @@ namespace ServerCentralino.Services
                 }
 
                 // Controllo se il numero è lungo 11 cifre e inizia con 0, 1 o 2
-                if (!string.IsNullOrEmpty(_callerNumber) && (_callerNumber.Length == 11 || _callerNumber.Length == 12) &&
-                    (_callerNumber.StartsWith("0") || _callerNumber.StartsWith("1") || _callerNumber.StartsWith("2")))
-                {
-                    var _contatto = await _callStatisticsService.CercaContattoAsync(_callerNumber);
-                    if (_contatto != null)
-                    {
-                        _logger.LogInformation($"2.1.2.1. Numero modificato per la ricerca: {_callerNumber} -> {_callerNumber.Substring(1)}");
-                        _callerNumber = _callerNumber.Substring(1); // Prende solo gli ultimi 10 caratteri   
-                    }
-                }
+                //if (!string.IsNullOrEmpty(_callerNumber) && (_callerNumber.Length == 11 || _callerNumber.Length == 12) &&
+                //    (_callerNumber.StartsWith("0") || _callerNumber.StartsWith("1") || _callerNumber.StartsWith("2")))
+                //{
+                //    var _contatto = await _callStatisticsService.CercaContattoAsync(_callerNumber);
+                //    if (_contatto != null)
+                //    {
+                //        _logger.LogInformation($"2.1.2.1. Numero modificato per la ricerca: {_callerNumber} -> {_callerNumber.Substring(1)}");
+                //        _callerNumber = _callerNumber.Substring(1); // Prende solo gli ultimi 10 caratteri   
+                //    }
+                //}
             }
 
             if (_callerNumber == "1000" || e.Channel.StartsWith("PJSIP/1000") || e.Channel.StartsWith("SIP/1000"))
@@ -159,6 +159,16 @@ namespace ServerCentralino.Services
 
             if (!string.IsNullOrEmpty(_callerNumber) && !processedUniqueIds.Contains(callKey))
             {
+                // 1. Verifica se la chiamata esiste già nel database
+                bool chiamataEsistente = await _callStatisticsService.CheckExistingCallAsync(callKey);
+
+                if (chiamataEsistente)
+                {
+                    _logger.LogInformation($"3.5. Chiamata già presente nel database - Key: {callKey}");
+                    processedUniqueIds.Add(callKey); // Marca come processata comunque
+                    return;
+                } 
+
                 processedUniqueIds.Add(callKey); // Segna la chiave come processata
 
                 if (!callData.ContainsKey(callKey))
@@ -171,32 +181,45 @@ namespace ServerCentralino.Services
                         CallerNumber = _callerNumber,
                         LinkedId = linkedId
                     };
+
+                    var _contatto = await _callStatisticsService.CercaContattoAsync(_callerNumber);
+                    string ragioneSociale = _contatto?.RagioneSociale ?? "Non registrato";
+                    string tipoChiamata = "";//_contatto?.Interno == 1 ? "Uscita" : "Entrata";
+
+                    // Controllo che la chiamata è in entrata o in uscita
+                    if (_callerNumber == "410" || _callerNumber == "411" || _callerNumber == "412" || _callerNumber == "413"
+                        || _callerNumber == "414" || _callerNumber == "415" || _callerNumber == "416" || _callerNumber == "418"
+                        || _callerNumber == "419" || _callerNumber == "420" || _callerNumber == "421" || _callerNumber == "422"
+                        || _callerNumber == "423" || _callerNumber == "499")
+                    {
+                        tipoChiamata = "Uscita";
+                    }
+                    else 
+                    {
+                        tipoChiamata = "Entrata";
+                    }
+
+                    //if (_contatto != null)
+                    //{
+                    //    tipoChiamata = _contatto.Interno == 1 ? "Uscita" : "Entrata";
+                    //}
+
+                    await _callStatisticsService.RegisterCall(
+                        _callerNumber,
+                        string.Empty, // CalleeNumber vuoto inizialmente
+                        ragioneSociale,
+                        string.Empty, // Ragione sociale chiamato vuota inizialmente
+                        callData[callKey].StartTime,
+                        tipoChiamata,
+                        callKey,
+                        ragioneSociale); // Passa callKey (linkedId o UniqueId)
+
+                    _logger.LogInformation($"4.3. Chiamata iniziata: {_callerNumber}, Key: {callKey} (LinkedId: {linkedId ?? "null"}, UniqueId: {e.UniqueId})");
                 }
                 else
                 {
                     callData[callKey].Count++;
                 }
-
-                var _contatto = await _callStatisticsService.CercaContattoAsync(_callerNumber);
-                string ragioneSociale = _contatto != null ? _contatto.RagioneSociale : "Non registrato";
-
-                string tipoChiamata = "Unknown";
-                if (_contatto != null)
-                {
-                    tipoChiamata = _contatto.Interno == 1 ? "Uscita" : "Entrata";
-                }
-
-                await _callStatisticsService.RegisterCall(
-                    _callerNumber,
-                    string.Empty, // CalleeNumber vuoto inizialmente
-                    ragioneSociale,
-                    string.Empty, // Ragione sociale chiamato vuota inizialmente
-                    callData[callKey].StartTime,
-                    tipoChiamata,
-                    callKey,
-                    ragioneSociale); // Passa callKey (linkedId o UniqueId)
-
-                _logger.LogInformation($"4.3. Chiamata iniziata: {_callerNumber}, Key: {callKey} (LinkedId: {linkedId ?? "null"}, UniqueId: {e.UniqueId})");
             }
 
             // Resto del codice per la gestione del CallerID...
@@ -272,21 +295,75 @@ namespace ServerCentralino.Services
             }
         }
 
-        private void OnDialBegin(object sender, DialBeginEvent e)
+        private async void OnDialBegin(object sender, DialBeginEvent e)
         {
             _logger.LogInformation($"D: Evento ricevuto: {e.GetType().Name}");
 
-            //string log_attributes = "";
-            //foreach (var attribute in e.Attributes)
-            //{
-            //    log_attributes += $"Attributo: {attribute.Key} = {attribute.Value}";
-            //}
+            try
+            {
+                // Recupera il linkedid (identificatore univoco della chiamata)
+                string linkedId = e.Attributes.ContainsKey("linkedid") ? e.Attributes["linkedid"] : null;
 
-            //_logger.LogInformation($"D: Attributi: {log_attributes}");
+                if (string.IsNullOrEmpty(linkedId))
+                {
+                    _logger.LogWarning("D: Nessun linkedid trovato nell'evento DialBegin");
+                    return;
+                }
 
-            //string numeroChiamante = e.CallerIdNum; // Numero del chiamante
-            //string channel = e.Channel; // Canale della chiamata in arrivo
-            //_logger.LogInformation($"D: {numeroChiamante} - {channel}");
+                // Recupera il numero del chiamato dagli attributi
+                string calledNumber = e.Attributes.ContainsKey("destcalleridnum") ? e.Attributes["destcalleridnum"] : null;
+
+                if (string.IsNullOrEmpty(calledNumber))
+                {
+                    _logger.LogWarning("D: Numero chiamato non disponibile negli attributi");
+                    return;
+                }
+
+                _logger.LogInformation($"D: Chiamata collegata - LinkedId: {linkedId}, Numero chiamato: {calledNumber}");
+
+                // Recupera anche il nome del chiamato se disponibile
+                string calledName = e.Attributes.ContainsKey("destcalleridname") ? e.Attributes["destcalleridname"] : string.Empty;
+
+                // 1. Cerca nella callData in memoria
+                if (callData.TryGetValue(linkedId, out var callInfo))
+                {
+                    callInfo.CalleeNumber = calledNumber;
+                    _logger.LogInformation($"D: Aggiornata callData in memoria - LinkedId: {linkedId}");
+                }
+
+                // Controllo che il numero che viene chiamato non contenga gli 0,1,2 o altro inizialmente,
+                // poichè uno di questi prefissi vengono generalemnte inseriti per chiamare all'eterno.
+                if (!string.IsNullOrEmpty(calledNumber) && calledNumber.Length >= 11) {
+                    if (calledNumber.StartsWith("0") || calledNumber.StartsWith("1") || calledNumber.StartsWith("2"))
+                    {
+                        var _contatto = await _callStatisticsService.CercaContattoAsync(calledNumber);
+                        if (_contatto == null)
+                        {
+                            _logger.LogInformation($"D: Numero modificato per la ricerca: {calledNumber} -> {calledNumber.Substring(1)}");
+                            calledNumber = calledNumber.Substring(1); // Prende solo gli ultimi 10 caratteri   
+                        }
+                    }
+                }
+
+                // 2. Aggiorna il record nel database
+                bool success = await _callStatisticsService.UpdateCalledNumberAsync(
+                    linkedId: linkedId,
+                    calledNumber: calledNumber,
+                    calledName: calledName);
+
+                if (success)
+                {
+                    _logger.LogInformation($"D: Database aggiornato - LinkedId: {linkedId}, Numero chiamato: {calledNumber}");
+                }
+                else
+                {
+                    _logger.LogWarning($"D: Fallito aggiornamento database per LinkedId: {linkedId}");
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"D: Errore durante DialBegin: {ex.Message}");
+            }
         }
 
         private async void HandleHangupEvent(object sender, HangupEvent e)
@@ -295,43 +372,37 @@ namespace ServerCentralino.Services
 
             string hangupUniqueId = e.UniqueId;
             string linkedId = e.Attributes.ContainsKey("linkedid") ? e.Attributes["linkedid"] : null;
-            string callerNumber = e.CallerIdNum;
             DateTime endTime = DateTime.Now;
 
-            // Cerchiamo prima per linkedId (se esiste), altrimenti per hangupUniqueId
-            string callKey = !string.IsNullOrEmpty(linkedId) ? linkedId : hangupUniqueId;
-
-            if (!string.IsNullOrEmpty(callerNumber))
+            if (string.IsNullOrEmpty(linkedId))
             {
-                // Cerchiamo nella callData usando prima linkedId, poi hangupUniqueId
-                if (callData.TryGetValue(callKey, out var callInfo))
+                _logger.LogWarning("HangupEvent senza linkedId - impossibile aggiornare");
+                return;
+            }
+
+            // 1. Prima prova ad aggiornare usando solo il linkedId
+            bool success = await _callStatisticsService.UpdateCallEndTimeAsync(linkedId, endTime);
+
+            if (!success)
+            {
+                // 2. Fallback: cerca nella callData in memoria
+                if (callData.TryGetValue(linkedId, out var callInfo))
                 {
-                    TimeSpan duration = endTime - callInfo.StartTime;
-
-                    _logger.LogInformation($"Chiamata terminata: {callerNumber}, " +
-                                        $"UniqueId: {hangupUniqueId}, " +
-                                        $"LinkedId: {linkedId}, " +
-                                        $"Durata: {duration.TotalSeconds} secondi");
-
-                    // Aggiorniamo la chiamata nel database
-                    await _callStatisticsService.UpdateCallEndTime(
-                        callerNumber,
-                        callInfo.StartTime,
-                        endTime,
-                        hangupUniqueId,
-                        linkedId);
-
-                    // Rimuoviamo la chiamata dalla callData
-                    callData.Remove(callKey);
+                    _logger.LogInformation($"H: Fallback su callData - Key: {linkedId}");
+                    success = await _callStatisticsService.UpdateCallEndTimeAsync(
+                        linkedId: linkedId,
+                        endTime: endTime,
+                        startTime: callInfo.StartTime,
+                        callerNumber: callInfo.CallerNumber);
                 }
                 else
                 {
-                    _logger.LogWarning($"Nessuna chiamata attiva trovata per: " +
-                                     $"Numero: {callerNumber}, " +
-                                     $"HangupUniqueId: {hangupUniqueId}, " +
-                                     $"LinkedId: {linkedId ?? "null"}");
+                    _logger.LogWarning($"H: Nessuna chiamata trovata in memoria per LinkedId: {linkedId}");
                 }
             }
+
+            // Rimuovi dalla callData indipendentemente dall'esito
+            callData.Remove(linkedId);
         }
 
         private string ReplaceAccentedChars(string input)

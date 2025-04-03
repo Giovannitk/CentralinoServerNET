@@ -4,14 +4,17 @@ using System.Linq;
 
 namespace ServerCentralino.Controllers
 {
+
     [Route("api/[controller]")]
     public class CallController : Controller
     {
         private readonly DatabaseService _callStatisticsService;
+        private readonly ILogger<ServiceCall> _logger;
 
-        public CallController(DatabaseService callStatisticsService)
+        public CallController(DatabaseService callStatisticsService, ILogger<ServiceCall> logger)
         {
             _callStatisticsService = callStatisticsService;
+            _logger = logger;
         }
 
         [HttpPost("make-call")]
@@ -39,6 +42,7 @@ namespace ServerCentralino.Controllers
             try
             {
                 var calls = _callStatisticsService.GetAllCalls(); // Metodo che devi implementare in DatabaseService
+                
                 return Ok(calls);
             }
             catch (Exception ex)
