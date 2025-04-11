@@ -2,6 +2,7 @@
 using AsterNET.Manager.Action;
 using AsterNET.Manager.Event;
 using Microsoft.IdentityModel.Tokens;
+using System.Linq.Expressions;
 
 namespace ServerCentralino.Services
 {
@@ -157,69 +158,76 @@ namespace ServerCentralino.Services
                 return;
             }
 
-            if (!string.IsNullOrEmpty(_callerNumber) && !processedUniqueIds.Contains(callKey))
+            try {
+
+                if (!string.IsNullOrEmpty(_callerNumber) && !processedUniqueIds.Contains(callKey))
+                {
+                    // 1. Verifica se la chiamata esiste già nel database
+                    bool chiamataEsistente = await _callStatisticsService.CheckExistingCallAsync(callKey);
+
+                    if (chiamataEsistente)
+                    {
+                        _logger.LogInformation($"3.5. Chiamata già presente nel database - Key: {callKey}");
+                        processedUniqueIds.Add(callKey); // Marca come processata comunque
+                        return;
+                    }
+
+                    processedUniqueIds.Add(callKey); // Segna la chiave come processata
+
+                    if (!callData.ContainsKey(callKey))
+                    {
+                        callData[callKey] = new CallInfo
+                        {
+                            Count = 0,
+                            TotalDuration = TimeSpan.Zero,
+                            StartTime = DateTime.Now,
+                            CallerNumber = _callerNumber,
+                            LinkedId = linkedId
+                        };
+
+                        var _contatto = await _callStatisticsService.CercaContattoAsync(_callerNumber);
+                        string ragioneSociale = _contatto?.RagioneSociale ?? "Non registrato";
+                        string tipoChiamata = "";//_contatto?.Interno == 1 ? "Uscita" : "Entrata";
+
+                        // Controllo che la chiamata è in entrata o in uscita
+                        if (_callerNumber == "410" || _callerNumber == "411" || _callerNumber == "412" || _callerNumber == "413"
+                            || _callerNumber == "414" || _callerNumber == "415" || _callerNumber == "416" || _callerNumber == "418"
+                            || _callerNumber == "419" || _callerNumber == "420" || _callerNumber == "421" || _callerNumber == "422"
+                            || _callerNumber == "423" || _callerNumber == "499")
+                        {
+                            tipoChiamata = "Uscita";
+                        }
+                        else
+                        {
+                            tipoChiamata = "Entrata";
+                        }
+
+                        //if (_contatto != null)
+                        //{
+                        //    tipoChiamata = _contatto.Interno == 1 ? "Uscita" : "Entrata";
+                        //}
+
+                        await _callStatisticsService.RegisterCall(
+                            _callerNumber,
+                            string.Empty, // CalleeNumber vuoto inizialmente
+                            ragioneSociale,
+                            string.Empty, // Ragione sociale chiamato vuota inizialmente
+                            callData[callKey].StartTime,
+                            tipoChiamata,
+                            callKey,
+                            ragioneSociale); // Passa callKey (linkedId o UniqueId)
+
+                        _logger.LogInformation($"4.3. Chiamata iniziata: {_callerNumber}, Key: {callKey} (LinkedId: {linkedId ?? "null"}, UniqueId: {e.UniqueId})");
+                    }
+                    else
+                    {
+                        callData[callKey].Count++;
+                    }
+                }
+            }
+            catch (Exception ex)
             {
-                // 1. Verifica se la chiamata esiste già nel database
-                bool chiamataEsistente = await _callStatisticsService.CheckExistingCallAsync(callKey);
-
-                if (chiamataEsistente)
-                {
-                    _logger.LogInformation($"3.5. Chiamata già presente nel database - Key: {callKey}");
-                    processedUniqueIds.Add(callKey); // Marca come processata comunque
-                    return;
-                } 
-
-                processedUniqueIds.Add(callKey); // Segna la chiave come processata
-
-                if (!callData.ContainsKey(callKey))
-                {
-                    callData[callKey] = new CallInfo
-                    {
-                        Count = 0,
-                        TotalDuration = TimeSpan.Zero,
-                        StartTime = DateTime.Now,
-                        CallerNumber = _callerNumber,
-                        LinkedId = linkedId
-                    };
-
-                    var _contatto = await _callStatisticsService.CercaContattoAsync(_callerNumber);
-                    string ragioneSociale = _contatto?.RagioneSociale ?? "Non registrato";
-                    string tipoChiamata = "";//_contatto?.Interno == 1 ? "Uscita" : "Entrata";
-
-                    // Controllo che la chiamata è in entrata o in uscita
-                    if (_callerNumber == "410" || _callerNumber == "411" || _callerNumber == "412" || _callerNumber == "413"
-                        || _callerNumber == "414" || _callerNumber == "415" || _callerNumber == "416" || _callerNumber == "418"
-                        || _callerNumber == "419" || _callerNumber == "420" || _callerNumber == "421" || _callerNumber == "422"
-                        || _callerNumber == "423" || _callerNumber == "499")
-                    {
-                        tipoChiamata = "Uscita";
-                    }
-                    else 
-                    {
-                        tipoChiamata = "Entrata";
-                    }
-
-                    //if (_contatto != null)
-                    //{
-                    //    tipoChiamata = _contatto.Interno == 1 ? "Uscita" : "Entrata";
-                    //}
-
-                    await _callStatisticsService.RegisterCall(
-                        _callerNumber,
-                        string.Empty, // CalleeNumber vuoto inizialmente
-                        ragioneSociale,
-                        string.Empty, // Ragione sociale chiamato vuota inizialmente
-                        callData[callKey].StartTime,
-                        tipoChiamata,
-                        callKey,
-                        ragioneSociale); // Passa callKey (linkedId o UniqueId)
-
-                    _logger.LogInformation($"4.3. Chiamata iniziata: {_callerNumber}, Key: {callKey} (LinkedId: {linkedId ?? "null"}, UniqueId: {e.UniqueId})");
-                }
-                else
-                {
-                    callData[callKey].Count++;
-                }
+                _logger.LogInformation(ex.StackTrace);
             }
 
             // Resto del codice per la gestione del CallerID...

@@ -182,7 +182,6 @@ namespace ServerCentralino.Services
 
         public async Task<List<Chiamata>> GetChiamateByNumeroAsync(string numeroTelefono)
         {
-
             var chiamate = new List<Chiamata>();
 
             try
@@ -192,13 +191,18 @@ namespace ServerCentralino.Services
                     await connection.OpenAsync();
 
                     string query = @"
-                SELECT c.ID, c.TipoChiamata, c.DataArrivoChiamata, c.DataFineChiamata,
-                       r1.NumeroContatto AS NumeroChiamante, r2.NumeroContatto AS NumeroChiamato
-                FROM Chiamate c
-                INNER JOIN Rubrica r1 ON c.NumeroChiamanteID = r1.ID
-                INNER JOIN Rubrica r2 ON c.NumeroChiamatoID = r2.ID
-                WHERE r1.NumeroContatto = @numero OR r2.NumeroContatto = @numero
-                ORDER BY c.DataArrivoChiamata DESC";
+        SELECT 
+            NumeroChiamante, 
+            NumeroChiamato, 
+            RagioneSocialeChiamante, 
+            RagioneSocialeChiamato, 
+            DataArrivoChiamata, 
+            DataFineChiamata, 
+            TipoChiamata, 
+            Locazione
+        FROM Chiamate
+        WHERE NumeroChiamante = @numero OR NumeroChiamato = @numero
+        ORDER BY DataArrivoChiamata DESC";
 
                     using (var command = new SqlCommand(query, connection))
                     {
@@ -210,12 +214,14 @@ namespace ServerCentralino.Services
                             {
                                 chiamate.Add(new Chiamata
                                 {
-                                    //ID = reader.GetInt32(0),
-                                    TipoChiamata = reader["TipoChiamata"].ToString(),
-                                    DataArrivoChiamata = reader.GetDateTime(2),
-                                    DataFineChiamata = reader.GetDateTime(3),
                                     NumeroChiamante = reader["NumeroChiamante"].ToString(),
-                                    NumeroChiamato = reader["NumeroChiamato"].ToString()
+                                    NumeroChiamato = reader["NumeroChiamato"].ToString(),
+                                    RagioneSocialeChiamante = reader["RagioneSocialeChiamante"].ToString(),
+                                    RagioneSocialeChiamato = reader["RagioneSocialeChiamato"].ToString(),
+                                    DataArrivoChiamata = DateTime.Parse(reader["DataArrivoChiamata"].ToString()),
+                                    DataFineChiamata = DateTime.Parse(reader["DataFineChiamata"].ToString()),
+                                    TipoChiamata = reader["TipoChiamata"].ToString(),
+                                    Locazione = reader["Locazione"].ToString()
                                 });
                             }
                         }
