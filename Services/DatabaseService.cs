@@ -487,6 +487,15 @@ namespace ServerCentralino.Services
                 return false; // In caso di errore, procedi comunque
             }
         }
+
+        public async Task<List<Contatto>> GetContattiIncompletiAsync()
+        {
+            using var conn = new SqlConnection(_connectionString);
+            var sql = "SELECT * FROM Rubrica WHERE RagioneSociale IS NULL OR CittaProvenienza IS NULL";
+
+            return (await conn.QueryAsync<Contatto>(sql)).ToList();
+        }
+
     }
 
     public class Contatto

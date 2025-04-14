@@ -182,6 +182,21 @@ namespace ServerCentralino.Controllers
                 return StatusCode(500, new { Message = "Errore durante il recupero delle chiamate.", Error = ex.Message });
             }
         }
+
+        [HttpGet("get-incomplete-contacts")]
+        public async Task<IActionResult> GetIncompleteContacts()
+        {
+            try
+            {
+                var incompleteContacts = await _callStatisticsService.GetContattiIncompletiAsync();
+                return Ok(incompleteContacts);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { Message = "Errore durante il recupero dei contatti incompleti.", Error = ex.Message });
+            }
+        }
+
     }
 
     public class MakeCallRequest
