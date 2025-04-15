@@ -234,12 +234,12 @@ namespace ServerCentralino.Services
             string numeroChiamante = e.CallerIdNum;
             string channel = e.Channel;
 
-            if (!string.IsNullOrEmpty(numeroChiamante) && numeroChiamante.Length == 11 &&
-                (numeroChiamante.StartsWith("0") || numeroChiamante.StartsWith("1") || numeroChiamante.StartsWith("2")))
-            {
-                _logger.LogInformation($"5. Numero modificato per la ricerca: {numeroChiamante} -> {numeroChiamante.Substring(1)}");
-                numeroChiamante = numeroChiamante.Substring(1);
-            }
+            //if (!string.IsNullOrEmpty(numeroChiamante) && numeroChiamante.Length == 11 &&
+            //    (numeroChiamante.StartsWith("0") || numeroChiamante.StartsWith("1") || numeroChiamante.StartsWith("2")))
+            //{
+            //    _logger.LogInformation($"5. Numero modificato per la ricerca: {numeroChiamante} -> {numeroChiamante.Substring(1)}");
+            //    numeroChiamante = numeroChiamante.Substring(1);
+            //}
 
             var contatto = await _callStatisticsService.CercaContattoAsync(numeroChiamante);
             string callerIdPersonalizzato;
@@ -332,7 +332,7 @@ namespace ServerCentralino.Services
                 // Recupera anche il nome del chiamato se disponibile
                 string calledName = e.Attributes.ContainsKey("destcalleridname") ? e.Attributes["destcalleridname"] : string.Empty;
 
-                // 1. Cerca nella callData in memoria
+                // 1. Cerco nella callData in memoria
                 if (callData.TryGetValue(linkedId, out var callInfo))
                 {
                     callInfo.CalleeNumber = calledNumber;
@@ -341,7 +341,8 @@ namespace ServerCentralino.Services
 
                 // Controllo che il numero che viene chiamato non contenga gli 0,1,2 o altro inizialmente,
                 // poichè uno di questi prefissi vengono generalemnte inseriti per chiamare all'eterno.
-                if (!string.IsNullOrEmpty(calledNumber) && calledNumber.Length >= 11) {
+                if (!string.IsNullOrEmpty(calledNumber) && calledNumber.Length >= 11)
+                {
                     if (calledNumber.StartsWith("0") || calledNumber.StartsWith("1") || calledNumber.StartsWith("2"))
                     {
                         var _contatto = await _callStatisticsService.CercaContattoAsync(calledNumber);
@@ -353,15 +354,25 @@ namespace ServerCentralino.Services
                     }
                 }
 
-                // 2. Aggiorna il record nel database
+                // 2. Recupero la ragione sociale
+                var contatto = await _callStatisticsService.CercaContattoAsync(calledNumber);
+                string ragioneSocialeChiamato = contatto?.RagioneSociale ?? "Non registrato";
+
+                if (ragioneSocialeChiamato == "Non registrato") 
+                {
+                    await _callStatisticsService.AggiungiContattoAsync(calledNumber, null, null, 0);    
+                }
+
+
+                // 3. Aggiorno il record nel database
                 bool success = await _callStatisticsService.UpdateCalledNumberAsync(
                     linkedId: linkedId,
                     calledNumber: calledNumber,
-                    calledName: calledName);
+                    calledName: ragioneSocialeChiamato);
 
                 if (success)
                 {
-                    _logger.LogInformation($"D: Database aggiornato - LinkedId: {linkedId}, Numero chiamato: {calledNumber}");
+                    _logger.LogInformation($"D: Database aggiornato - LinkedId: {linkedId}, Numero chiamato: {calledNumber}, ragione sociale chiamato {ragioneSocialeChiamato}");
                 }
                 else
                 {
