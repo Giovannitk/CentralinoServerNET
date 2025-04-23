@@ -76,11 +76,18 @@ namespace ServerCentralino.Services
             {
                 _manager.Login();
                 _logger.LogInformation("Connesso ad Asterisk via AMI.");
+
+                // Registro del gestore per tutti gli eventi generici
+                _manager.UnhandledEvent += OnAsteriskEvent;
+                
                 _manager.NewChannel += OnNewChannel;
                 //_manager.DialBegin += HandleDialBeginEvent;
-                _manager.Hangup += HandleHangupEvent; // Aggiungi questa linea
+                _manager.Hangup += HandleHangupEvent;
 
                 _manager.DialBegin += OnDialBegin;
+
+                _manager.AttendedTransfer += OnAttendedTransfer;
+                _manager.BlindTransfer += OnBlindTransfer;
 
                 _logger.LogInformation("AMI Service started and listening for events...");
             }
@@ -117,6 +124,21 @@ namespace ServerCentralino.Services
             _logger.LogInformation($"Evento ricevuto: {e.GetType().Name}");
         }
 
+        private void OnAttendedTransfer(object sender, AttendedTransferEvent e)
+        {
+            _logger.LogInformation(
+                $"Trasferimento assistito: {e.TransfereeChannel} ha trasferito " +
+                $"{e.TransfereeChannel} verso {e.TransferTargetChannel} " +
+                $"(da interno {e.TransfereeExten} a {e.TransfereeExten}, context: {e.TransfereeContext}) - uniqueid transfer: {e.TransfereeUniqueId} - uniqueid: {e.UniqueId}");
+
+        }
+        private void OnBlindTransfer(object sender, BlindTransferEvent e)
+        {
+            _logger.LogInformation($"Trasferimento cieco da {e.Channel} a {e.Extension} su {e.Context}");
+
+            _logger.LogInformation($"--> {e.Attributes.Keys}");
+        }
+
         private async void OnNewChannel(object sender, NewChannelEvent e)
         {
             _logger.LogInformation($"1. Nuovo canale attivo: {e.Channel} - id:{e.UniqueId}");
@@ -131,11 +153,11 @@ namespace ServerCentralino.Services
             // Verifica se il canale è il destinatario della chiamata
             if (e.Channel.StartsWith("PJSIP/4") || e.Channel.StartsWith("SIP/4"))
             {
-                _logger.LogInformation("2.1. Chiamata da interno.");
+                //_logger.LogInformation("2.1. Chiamata da interno.");
 
                 if ((_callerNumber.Length == 3 || _callerNumber.Length == 4) && _callerNumber.StartsWith("4"))
                 {
-                    _logger.LogInformation($"2.1.1. Chiamata da interno: {_callerNumber}");
+                   // _logger.LogInformation($"2.1.1. Chiamata da interno: {_callerNumber}");
                     flag_interno = true;
                 }
 
@@ -167,7 +189,7 @@ namespace ServerCentralino.Services
 
                     if (chiamataEsistente)
                     {
-                        _logger.LogInformation($"3.5. Chiamata già presente nel database - Key: {callKey}");
+                       // _logger.LogInformation($"3.5. Chiamata già presente nel database - Key: {callKey}");
                         processedUniqueIds.Add(callKey); // Marca come processata comunque
                         return;
                     }
@@ -249,7 +271,7 @@ namespace ServerCentralino.Services
                 _logger.LogWarning($"6. Canale di destinazione {destChannel} non trovato negli attributi dell'evento. CallerID non modificato.");
             }
 
-            _logger.LogInformation($"7. Chiamata in arrivo da: {e.CallerIdNum} - canale({e.Channel}) verso il canale: {channel}");
+            //_logger.LogInformation($"7. Chiamata in arrivo da: {e.CallerIdNum} - canale({e.Channel}) verso il canale: {channel}");
 
             if (contatto != null)
             {
@@ -258,26 +280,26 @@ namespace ServerCentralino.Services
 
                 if (flag_interno)
                 {
-                    _logger.LogInformation($"8.1. Trovato nel database: {ragioneSocialeClean}, {cittaClean}");
+                   // _logger.LogInformation($"8.1. Trovato nel database: {ragioneSocialeClean}, {cittaClean}");
                     callerIdPersonalizzato = $"{ragioneSocialeClean} ({cittaClean})";
                 }
                 else
                 {
                     if (string.IsNullOrEmpty(ragioneSocialeClean) || string.IsNullOrEmpty(cittaClean))
                     {
-                        _logger.LogInformation($"8.2.1 Trovato nel database: {ragioneSocialeClean}, {cittaClean}");
+                        //_logger.LogInformation($"8.2.1 Trovato nel database: {ragioneSocialeClean}, {cittaClean}");
                         callerIdPersonalizzato = $"{numeroChiamante}";
                     }
                     else
                     {
-                        _logger.LogInformation($"8.2.2. Trovato nel database: {ragioneSocialeClean}, {cittaClean}");
+                        //_logger.LogInformation($"8.2.2. Trovato nel database: {ragioneSocialeClean}, {cittaClean}");
                         callerIdPersonalizzato = $"{numeroChiamante} - {ragioneSocialeClean} ({cittaClean})";
                     }
                 }
             }
             else
             {
-                _logger.LogInformation("8.3. Numero non trovato nel database. Impostazione CallerID predefinito.");
+               // _logger.LogInformation("8.3. Numero non trovato nel database. Impostazione CallerID predefinito.");
                 callerIdPersonalizzato = $"{numeroChiamante} - Non registrato";
             }
 
@@ -291,7 +313,7 @@ namespace ServerCentralino.Services
             try
             {
                 _manager.SendAction(setCallerId);
-                _logger.LogInformation($"9. CallerID aggiornato: {callerIdPersonalizzato}");
+                //_logger.LogInformation($"9. CallerID aggiornato: {callerIdPersonalizzato}");
             }
             catch (System.TimeoutException ex)
             {
@@ -314,7 +336,7 @@ namespace ServerCentralino.Services
 
                 if (string.IsNullOrEmpty(linkedId))
                 {
-                    _logger.LogWarning("D: Nessun linkedid trovato nell'evento DialBegin");
+                   // _logger.LogWarning("D: Nessun linkedid trovato nell'evento DialBegin");
                     return;
                 }
 
@@ -323,7 +345,7 @@ namespace ServerCentralino.Services
 
                 if (string.IsNullOrEmpty(calledNumber))
                 {
-                    _logger.LogWarning("D: Numero chiamato non disponibile negli attributi");
+                    //_logger.LogWarning("D: Numero chiamato non disponibile negli attributi");
                     return;
                 }
 
@@ -348,7 +370,7 @@ namespace ServerCentralino.Services
                         var _contatto = await _callStatisticsService.CercaContattoAsync(calledNumber);
                         if (_contatto == null)
                         {
-                            _logger.LogInformation($"D: Numero modificato per la ricerca: {calledNumber} -> {calledNumber.Substring(1)}");
+                            //_logger.LogInformation($"D: Numero modificato per la ricerca: {calledNumber} -> {calledNumber.Substring(1)}");
                             calledNumber = calledNumber.Substring(1); // Prende solo gli ultimi 10 caratteri   
                         }
                     }
@@ -387,20 +409,50 @@ namespace ServerCentralino.Services
 
         private async void HandleHangupEvent(object sender, HangupEvent e)
         {
-            _logger.LogInformation($"Catturato evento hangup: {e.Channel} - id:{e.UniqueId}");
+            _logger.LogInformation($"Catturato evento hangup: {e.Channel} - {e.CallerId} - {e.CallerIdName} - {e.CallerIdNum} - {e.Connectedlinenum} - {e.ConnectedLineName}"); //- {e.Attributes.Keys} - id:{e.UniqueId}");
 
+            var calledNumber = e.Connectedlinenum;
             string hangupUniqueId = e.UniqueId;
             string linkedId = e.Attributes.ContainsKey("linkedid") ? e.Attributes["linkedid"] : null;
             DateTime endTime = DateTime.Now;
 
             if (string.IsNullOrEmpty(linkedId))
             {
-                _logger.LogWarning("HangupEvent senza linkedId - impossibile aggiornare");
+               // _logger.LogWarning("HangupEvent senza linkedId - impossibile aggiornare");
                 return;
             }
 
+            if (calledNumber == "<unknown>") 
+            {
+                return;
+            }
+
+
+            // Controllo che il numero che viene chiamato non contenga gli 0,1,2 o altro inizialmente,
+            // poichè uno di questi prefissi vengono generalemnte inseriti per chiamare all'eterno.
+            if (!string.IsNullOrEmpty(e.Connectedlinenum) && e.Connectedlinenum.Length >= 11)
+            {
+                if (e.Connectedlinenum.StartsWith("0") || e.Connectedlinenum.StartsWith("1") || e.Connectedlinenum.StartsWith("2"))
+                {
+                    var _contatto = await _callStatisticsService.CercaContattoAsync(e.Connectedlinenum);
+                    if (_contatto == null)
+                    {
+                        //_logger.LogInformation($"D: Numero modificato per la ricerca: {calledNumber} -> {calledNumber.Substring(1)}");
+                        calledNumber = e.Connectedlinenum.Substring(1); // Prende solo gli ultimi 10 caratteri   
+                    }
+                }
+            }
+
+            string? RScalledNumber = null;
+            var _contattoRS = await _callStatisticsService.CercaContattoAsync(calledNumber);
+            if (_contattoRS != null)
+            {
+                RScalledNumber = _contattoRS.RagioneSociale;
+            }
+
             // 1. Prima prova ad aggiornare usando solo il linkedId
-            bool success = await _callStatisticsService.UpdateCallEndTimeAsync(linkedId, endTime);
+            //bool success = await _callStatisticsService.UpdateCallEndTimeAsync(linkedId, endTime, null,null);//, e.Connectedlinenum);//  e.Connectedlinenum); // da modificare il quarto campo per inserire il numero del chiamato effettivo che parla col chiamante e a cui è stata trasferita la chiamata
+            bool success = await _callStatisticsService.UpdateCallEndTimeAsync(linkedId, endTime, null, calledNumber, RScalledNumber);
 
             if (!success)
             {
@@ -412,7 +464,8 @@ namespace ServerCentralino.Services
                         linkedId: linkedId,
                         endTime: endTime,
                         startTime: callInfo.StartTime,
-                        callerNumber: callInfo.CallerNumber);
+                        callerNumber: calledNumber,
+                        ragioneSocialeChiamato: RScalledNumber);
                 }
                 else
                 {

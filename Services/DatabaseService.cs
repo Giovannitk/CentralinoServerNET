@@ -118,10 +118,11 @@ namespace ServerCentralino.Services
         }
 
         public async Task<bool> UpdateCallEndTimeAsync(
-            string linkedId,
-            DateTime endTime,
-            DateTime? startTime = null,
-            string callerNumber = null)
+    string linkedId,
+    DateTime endTime,
+    DateTime? startTime = null,
+    string? callerNumber = null,
+    string? ragioneSocialeChiamato = null)
         {
             try
             {
@@ -131,40 +132,55 @@ namespace ServerCentralino.Services
 
                     string query = @"
                 UPDATE Chiamate
-                SET DataFineChiamata = @endTime
-                WHERE UniqueID = @linkedId
-                AND DataFineChiamata = DataArrivoChiamata"; // Solo se non modificato
-
-                    if (startTime.HasValue)
-                    {
-                        query += " AND DataArrivoChiamata = @startTime";
-                    }
+                SET DataFineChiamata = @endTime";
 
                     if (!string.IsNullOrEmpty(callerNumber))
                     {
-                        query += " AND NumeroChiamante = @callerNumber";
+                        query += ", NumeroChiamato = @callerNumber";
                     }
+
+                    if (!string.IsNullOrEmpty(ragioneSocialeChiamato))
+                    {
+                        query += ", RagioneSocialeChiamato = @ragioneSocialeChiamato";
+                    }
+
+                    query += " WHERE UniqueID = @linkedId AND DataFineChiamata = DataArrivoChiamata";
+
+                    if (!string.IsNullOrEmpty(callerNumber))
+                    {
+                        query += " AND NumeroChiamante != @callerNumber";
+                    }
+
+                    //if (startTime.HasValue)
+                    //{
+                    //    query += " AND DataArrivoChiamata = @startTime";
+                    //}
 
                     using (var command = new SqlCommand(query, connection))
                     {
                         command.Parameters.AddWithValue("@endTime", endTime);
                         command.Parameters.AddWithValue("@linkedId", linkedId);
 
-                        if (startTime.HasValue)
-                        {
-                            command.Parameters.AddWithValue("@startTime", startTime.Value);
-                        }
-
                         if (!string.IsNullOrEmpty(callerNumber))
                         {
                             command.Parameters.AddWithValue("@callerNumber", callerNumber);
+                        }
+
+                        if (!string.IsNullOrEmpty(ragioneSocialeChiamato))
+                        {
+                            command.Parameters.AddWithValue("@ragioneSocialeChiamato", ragioneSocialeChiamato);
+                        }
+
+                        if (startTime.HasValue)
+                        {
+                            command.Parameters.AddWithValue("@startTime", startTime.Value);
                         }
 
                         int rowsAffected = await command.ExecuteNonQueryAsync();
 
                         if (rowsAffected > 0)
                         {
-                            _logger.LogInformation($"H: Chiamata {linkedId} aggiornata alle {endTime}");
+                            _logger.LogInformation($"H: Chiamata {linkedId} aggiornata alle {endTime}. Numero chiamato: {callerNumber} - RS:{ragioneSocialeChiamato}");
                             return true;
                         }
 
