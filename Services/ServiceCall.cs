@@ -365,7 +365,10 @@ namespace ServerCentralino.Services
                 // poichè uno di questi prefissi vengono generalemnte inseriti per chiamare all'eterno.
                 if (!string.IsNullOrEmpty(calledNumber) && calledNumber.Length >= 11)
                 {
-                    if (calledNumber.StartsWith("0") || calledNumber.StartsWith("1") || calledNumber.StartsWith("2"))
+                    if (calledNumber.StartsWith("0") || calledNumber.StartsWith("1") || calledNumber.StartsWith("2") ||
+                        calledNumber.StartsWith("3") || calledNumber.StartsWith("4") || calledNumber.StartsWith("5") ||
+                        calledNumber.StartsWith("6") || calledNumber.StartsWith("7") || calledNumber.StartsWith("8") ||
+                        calledNumber.StartsWith("9"))
                     {
                         var _contatto = await _callStatisticsService.CercaContattoAsync(calledNumber);
                         if (_contatto == null)

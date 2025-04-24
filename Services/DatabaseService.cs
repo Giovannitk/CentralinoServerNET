@@ -512,6 +512,42 @@ namespace ServerCentralino.Services
             return (await conn.QueryAsync<Contatto>(sql)).ToList();
         }
 
+        public async Task<bool> DeleteContactAsync(string phoneNumber)
+        {
+            try
+            {
+                using (var connection = new SqlConnection(_connectionString))
+                {
+                    await connection.OpenAsync();
+
+                    string query = "DELETE FROM Rubrica WHERE NumeroContatto = @numero";
+
+                    using (var command = new SqlCommand(query, connection))
+                    {
+                        command.Parameters.AddWithValue("@numero", phoneNumber);
+
+                        int rowsAffected = await command.ExecuteNonQueryAsync();
+
+                        if (rowsAffected > 0)
+                        {
+                            _logger.LogInformation($"Contatto eliminato con successo: {phoneNumber}");
+                            return true;
+                        }
+                        else
+                        {
+                            _logger.LogWarning($"Nessun contatto trovato da eliminare per il numero: {phoneNumber}");
+                            return false;
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"Errore durante l'eliminazione del contatto {phoneNumber}: {ex.Message}");
+                return false;
+            }
+        }
+
     }
 
     public class Contatto

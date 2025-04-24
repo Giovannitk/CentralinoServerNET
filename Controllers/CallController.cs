@@ -197,6 +197,17 @@ namespace ServerCentralino.Controllers
             }
         }
 
+
+        [HttpDelete("delete-contact")]
+        public async Task<IActionResult> DeleteContact(string phoneNumber)
+        {
+            var result = await _callStatisticsService.DeleteContactAsync(phoneNumber);
+            if (result)
+                return Ok();
+            else
+                return NotFound();
+        }
+
     }
 
     public class MakeCallRequest
