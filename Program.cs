@@ -1,4 +1,5 @@
 using ServerCentralino.Services;
+using System.Threading;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -11,32 +12,53 @@ builder.Logging.AddSimpleConsole(options =>
     options.UseUtcTimestamp = false;
 });
 
-// Registrazione di AmiService e AmiBackgroundService
-builder.Services.AddSingleton<ServiceCall>();
-builder.Services.AddHostedService<AmiBackgroundService>();
+const string appName = "ServerCentralino";
+bool createdNew;
+var mutex = new Mutex(true, appName, out createdNew);
 
-// Registrazione di DatabaseService
-builder.Services.AddSingleton<DatabaseService>();
-
-builder.Services.AddControllers();
-
-// Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
-builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
-
-var app = builder.Build();
-
-// Configure the HTTP request pipeline.
-if (app.Environment.IsDevelopment())
+if (!createdNew)
 {
-    app.UseSwagger();
-    app.UseSwaggerUI();
+    Console.WriteLine($"{appName} è già in esecuzione. Uscita...");
+    return; // Chiudi l'applicazione
 }
 
-app.UseHttpsRedirection();
+try
+{
+    // Registrazione di AmiService e AmiBackgroundService
+    builder.Services.AddSingleton<ServiceCall>();
+    builder.Services.AddHostedService<AmiBackgroundService>();
 
-app.UseAuthorization();
+    // Registrazione di DatabaseService
+    builder.Services.AddSingleton<DatabaseService>();
 
-app.MapControllers();
+    builder.Services.AddControllers();
 
-app.Run();
+    // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
+    builder.Services.AddEndpointsApiExplorer();
+    builder.Services.AddSwaggerGen();
+
+    var app = builder.Build();
+
+    // Configure the HTTP request pipeline.
+    if (app.Environment.IsDevelopment())
+    {
+        app.UseSwagger();
+        app.UseSwaggerUI();
+    }
+
+    app.UseHttpsRedirection();
+
+    app.UseAuthorization();
+
+    app.MapControllers();
+
+    // Rilascia il mutex quando l'applicazione termina
+    app.Lifetime.ApplicationStopped.Register(() => mutex.ReleaseMutex());
+
+    app.Run();
+}
+catch (Exception ex)
+{
+    Console.WriteLine($"Errore avvio applicazione: {ex.Message}");
+    mutex.ReleaseMutex();
+}
