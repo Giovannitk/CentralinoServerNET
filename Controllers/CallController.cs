@@ -208,6 +208,72 @@ namespace ServerCentralino.Controllers
                 return NotFound();
         }
 
+
+        [HttpDelete("delete-chiamata")]
+        public async Task<IActionResult> DeleteChiamata(string callerNumber, string calledNumber, DateTime endCall)
+        {
+            try
+            {
+                // 1. Recupera la chiamata usando i parametri forniti
+                var chiamata = await _callStatisticsService.GetChiamataByNumbers(callerNumber, calledNumber, endCall);
+
+                if (chiamata == null)
+                {
+                    _logger.LogWarning($"Nessuna chiamata trovata per chiamante: {callerNumber}, chiamato: {calledNumber}, data fine: {endCall}");
+                    return NotFound();
+                }
+
+                // 2. Elimina la chiamata usando l'UniqueID
+                var result = await _callStatisticsService.DeleteChiamataByUniqueIdAsync(chiamata.UniqueID);
+
+                if (result)
+                {
+                    _logger.LogInformation($"Chiamata eliminata con successo. UniqueID: {chiamata.UniqueID}");
+                    return Ok();
+                }
+                else
+                {
+                    _logger.LogWarning($"Eliminazione fallita per UniqueID: {chiamata.UniqueID}");
+                    return StatusCode(StatusCodes.Status500InternalServerError);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"Errore durante l'eliminazione della chiamata: {ex.Message}");
+                return StatusCode(StatusCodes.Status500InternalServerError, ex.Message);
+            }
+        }
+
+        [HttpDelete("delete-chiamata-by-id")]
+        public async Task<IActionResult> DeleteChiamataByUniqueId(string uniqueId)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(uniqueId))
+                {
+                    _logger.LogWarning("UniqueID non valido o vuoto");
+                    return BadRequest("UniqueID è obbligatorio");
+                }
+
+                var result = await _callStatisticsService.DeleteChiamataByUniqueIdAsync(uniqueId);
+
+                if (result)
+                {
+                    _logger.LogInformation($"Chiamata con UniqueID {uniqueId} eliminata con successo");
+                    return Ok();
+                }
+                else
+                {
+                    _logger.LogWarning($"Nessuna chiamata trovata con UniqueID {uniqueId}");
+                    return NotFound();
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"Errore durante l'eliminazione della chiamata {uniqueId}: {ex.Message}");
+                return StatusCode(StatusCodes.Status500InternalServerError, "Errore durante l'eliminazione");
+            }
+        }
     }
 
     public class MakeCallRequest

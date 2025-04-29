@@ -52,9 +52,13 @@ namespace ServerCentralino.Services
             callData = new Dictionary<string, CallInfo>();
             processedUniqueIds = new HashSet<string>();
 
-            string? amiHost = Environment.GetEnvironmentVariable("AMI_HOST");
-            string? amiUser = Environment.GetEnvironmentVariable("AMI_USER");
-            string? amiPassword = Environment.GetEnvironmentVariable("AMI_PASSWORD");
+            //string? amiHost = Environment.GetEnvironmentVariable("AMI_HOST");
+            //string? amiUser = Environment.GetEnvironmentVariable("AMI_USER");
+            //string? amiPassword = Environment.GetEnvironmentVariable("AMI_PASSWORD");
+
+            string? amiHost = configuration["AmiSettings:Host"];
+            string? amiUser = configuration["AmiSettings:Username"];
+            string? amiPassword = configuration["AmiSettings:Password"];
 
             Console.WriteLine($"{amiHost} - {amiUser} - {amiPassword}");
 
@@ -64,7 +68,8 @@ namespace ServerCentralino.Services
             }
 
 
-            if (!int.TryParse(Environment.GetEnvironmentVariable("AMI_PORT"), out int amiPort))
+            //if (!int.TryParse(Environment.GetEnvironmentVariable("AMI_PORT"), out int amiPort))
+            if (!int.TryParse(configuration["AmiSettings:Port"], out int amiPort))
             {
                 throw new ArgumentException("Il valore della porta AMI non è valido.");
             }

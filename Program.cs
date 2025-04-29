@@ -1,54 +1,36 @@
 using ServerCentralino.Services;
+using System.Diagnostics;
+using System.Windows;
+using ConfigTool;
 
 namespace ServerCentralino
-    {
+{
     class Program
     {
         [STAThread]
         static void Main(string[] args)
         {
-            try
-            {
-                // Chiudi eventuali istanze esistenti di ServerCentralino
-                System.Diagnostics.Process[] existingProcesses;
-                do
-                {
-                    // Trova tutti i processi con lo stesso nome
-                    existingProcesses = System.Diagnostics.Process.GetProcessesByName("ServerCentralino");
+            // Termina eventuali processi duplicati prima di tutto
+            TerminaProcessiDuplicati();
 
-                    // Escludi il processo corrente dalla terminazione
-                    var currentProcess = System.Diagnostics.Process.GetCurrentProcess();
-                    existingProcesses = existingProcesses.Where(p => p.Id != currentProcess.Id).ToArray();
-
-                    if (existingProcesses.Length > 0)
-                    {
-                        foreach (var process in existingProcesses)
-                        {
-                            try
-                            {
-                                process.Kill();
-                                Console.WriteLine($"Terminata istanza esistente con PID: {process.Id}");
-                            }
-                            catch (Exception ex)
-                            {
-                                Console.WriteLine($"Errore durante la terminazione del processo {process.Id}: {ex.Message}");
-                            }
-                        }
-                        // Pausa per permettere la chiusura dei processi
-                        System.Threading.Thread.Sleep(300);
-                    }
-                } while (existingProcesses.Length > 0);
-            }
-            catch (Exception ex)
+            if (args.Length > 0 && args[0].ToLower() == "setup")
             {
-                Console.WriteLine($"Errore durante la chiusura dei processi esistenti: {ex.Message}");
+                Console.WriteLine("Modalità setup rilevata.");
+                var app = new Application();
+                app.Run(new MainWindow()); // Pannello WPF da ConfigTool
+                return;
             }
 
+            AvviaServer(args);
+        }
+
+        static void AvviaServer(string[] args)
+        {
             try
             {
                 var builder = WebApplication.CreateBuilder(args);
 
-                // Configurazione logging con timestamp
+                // Logging
                 builder.Logging.AddSimpleConsole(options =>
                 {
                     options.TimestampFormat = "[yyyy-MM-dd HH:mm:ss] ";
@@ -57,7 +39,7 @@ namespace ServerCentralino
                     options.UseUtcTimestamp = false;
                 });
 
-                // Registrazione dei servizi
+                // Servizi
                 builder.Services.AddSingleton<ServiceCall>();
                 builder.Services.AddHostedService<AmiBackgroundService>();
                 builder.Services.AddSingleton<DatabaseService>();
@@ -83,6 +65,37 @@ namespace ServerCentralino
             catch (Exception ex)
             {
                 Console.WriteLine($"Errore avvio applicazione: {ex.Message}");
+            }
+        }
+
+        static void TerminaProcessiDuplicati()
+        {
+            try
+            {
+                var currentProcess = Process.GetCurrentProcess();
+                var existingProcesses = Process.GetProcessesByName("ServerCentralino")
+                    .Where(p => p.Id != currentProcess.Id)
+                    .ToArray();
+
+                foreach (var process in existingProcesses)
+                {
+                    try
+                    {
+                        process.Kill();
+                        Console.WriteLine($"Terminata istanza esistente con PID: {process.Id}");
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"Errore durante la terminazione del processo {process.Id}: {ex.Message}");
+                    }
+                }
+
+                if (existingProcesses.Length > 0)
+                    Thread.Sleep(300);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Errore durante la chiusura dei processi esistenti: {ex.Message}");
             }
         }
     }

@@ -16,12 +16,13 @@ namespace ServerCentralino.Services
 
         public DatabaseService(IConfiguration configuration, ILogger<DatabaseService> logger)
         {
-            var db_server = Environment.GetEnvironmentVariable("DB_SERVER");
-            var db_name = Environment.GetEnvironmentVariable("DB_NAME");
-            var db_user = Environment.GetEnvironmentVariable("DB_USER");
-            var db_password = Environment.GetEnvironmentVariable("DB_PASSWORD");
-            _connectionString = $"Server={db_server};Database={db_name};User Id={db_user};Password={db_password};TrustServerCertificate=True";
+            //var db_server = Environment.GetEnvironmentVariable("DB_SERVER");
+            //var db_name = Environment.GetEnvironmentVariable("DB_NAME");
+            //var db_user = Environment.GetEnvironmentVariable("DB_USER");
+            //var db_password = Environment.GetEnvironmentVariable("DB_PASSWORD");
+            //_connectionString = $"Server={db_server};Database={db_name};User Id={db_user};Password={db_password};TrustServerCertificate=True";
 
+            _connectionString = configuration.GetConnectionString("DefaultConnection");
             Console.WriteLine($"{_connectionString}");
             _logger = logger;
         }
@@ -381,6 +382,60 @@ namespace ServerCentralino.Services
             return null;
         }
 
+        public async Task<Chiamata> GetChiamataByNumbers(string callerNumber, string calledNumber, DateTime endCall)
+        {
+            try
+            {
+                using (var connection = new SqlConnection(_connectionString))
+                {
+                    await connection.OpenAsync();
+
+                    string query = @"
+                SELECT TOP 1 
+                    c.ID, c.TipoChiamata, c.DataArrivoChiamata, c.DataFineChiamata, 
+                    c.Extra, c.UniqueID,
+                    r1.NumeroContatto AS NumeroChiamante, 
+                    r2.NumeroContatto AS NumeroChiamato
+                FROM Chiamate c
+                INNER JOIN Rubrica r1 ON c.NumeroChiamanteID = r1.ID
+                INNER JOIN Rubrica r2 ON c.NumeroChiamatoID = r2.ID
+                WHERE r1.NumeroContatto = @callerNumber 
+                AND r2.NumeroContatto = @calledNumber
+                ORDER BY c.DataFineChiamata DESC";
+
+                    using (var command = new SqlCommand(query, connection))
+                    {
+                        command.Parameters.AddWithValue("@callerNumber", callerNumber);
+                        command.Parameters.AddWithValue("@calledNumber", calledNumber);
+
+                        using (var reader = await command.ExecuteReaderAsync())
+                        {
+                            if (await reader.ReadAsync())
+                            {
+                                return new Chiamata
+                                {
+                                    //ID = reader.GetInt32(0),
+                                    TipoChiamata = reader["TipoChiamata"].ToString(),
+                                    DataArrivoChiamata = reader.GetDateTime(2),
+                                    DataFineChiamata = reader.GetDateTime(3),
+                                    // Extra = reader["Extra"] != DBNull.Value ? reader["Extra"].ToString() : null,
+                                    NumeroChiamante = reader["NumeroChiamante"].ToString(),
+                                    NumeroChiamato = reader["NumeroChiamato"].ToString(),
+                                    UniqueID = reader["UniqueID"].ToString()
+                                };
+                            }
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"Errore nel recupero della chiamata: {ex.Message}");
+            }
+
+            return null;
+        }
+
         public async Task<bool> UpdateCallLocationAsync(int callId, string location)
         {
             try
@@ -555,6 +610,42 @@ namespace ServerCentralino.Services
             }
         }
 
+        public async Task<bool> DeleteChiamataByUniqueIdAsync(string uniqueId)
+        {
+            try
+            {
+                using (var connection = new SqlConnection(_connectionString))
+                {
+                    await connection.OpenAsync();
+
+                    string query = "DELETE FROM Chiamate WHERE UniqueID = @uniqueId";
+
+                    using (var command = new SqlCommand(query, connection))
+                    {
+                        command.Parameters.AddWithValue("@uniqueId", uniqueId);
+
+                        int rowsAffected = await command.ExecuteNonQueryAsync();
+
+                        if (rowsAffected > 0)
+                        {
+                            _logger.LogInformation($"Chiamata eliminata con successo. UniqueID: {uniqueId}");
+                            return true;
+                        }
+                        else
+                        {
+                            _logger.LogWarning($"Nessuna chiamata trovata con l'UniqueID: {uniqueId}");
+                            return false;
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"Errore durante l'eliminazione della chiamata con UniqueID {uniqueId}: {ex.Message}");
+                return false;
+            }
+        }
+
     }
 
     public class Contatto
@@ -563,37 +654,6 @@ namespace ServerCentralino.Services
         public string? Citta { get; set; }
         public string? NumeroContatto { get; set; }
         public int? Interno { get; set; }
-    }
-
-    //public class Chiamata 
-    //{
-    //    public int? ID { get; set; }
-
-    //    public string? TipoChiamata { get; set; }
-
-    //    public DateTime? DataArrivoChiamata { get; set; }
-
-    //    public DateTime? DataFineChiamata { get; set; }
-
-    //    public string? NumeroChiamante { get; set; }
-
-    //    public string? NumeroChiamato { get; set; }
-
-    //    // Campo da aggiornare col comune da dove sta chiamando il chiamante, dopo l'arrivo e la fine della chiamata.
-    //    public string? Extra { get; set; }
-    //}
-
-    public class CallRecord
-    {
-        public int ID { get; set; }
-        public int NumeroChiamanteID { get; set; }
-        public int NumeroChiamatoID { get; set; }
-        public string? TipoChiamata { get; set; }
-        public DateTime DataArrivoChiamata { get; set; }
-        public DateTime DataFineChiamata { get; set; }
-
-        // Campo da aggiornare col comune da dove sta chiamando il chiamante, dopo l'arrivo e la fine della chiamata.
-        public string? Extra { get; set; }
     }
 
     public class Chiamata
@@ -607,5 +667,6 @@ namespace ServerCentralino.Services
         public DateTime DataFineChiamata { get; set; }
         public string? TipoChiamata { get; set; }
         public string? Locazione { get; set; }
+        public string? UniqueID { get; set; }
     }
 } 
