@@ -16,9 +16,16 @@ namespace ServerCentralino.Services
 
         public DatabaseService(IConfiguration configuration, ILogger<DatabaseService> logger)
         {
-            _connectionString = configuration.GetConnectionString("DefaultConnection");
+            var db_server = Environment.GetEnvironmentVariable("DB_SERVER");
+            var db_name = Environment.GetEnvironmentVariable("DB_NAME");
+            var db_user = Environment.GetEnvironmentVariable("DB_USER");
+            var db_password = Environment.GetEnvironmentVariable("DB_PASSWORD");
+            _connectionString = $"Server={db_server};Database={db_name};User Id={db_user};Password={db_password};TrustServerCertificate=True";
+
+            Console.WriteLine($"{_connectionString}");
             _logger = logger;
         }
+
 
         public async Task<Contatto?> CercaContattoAsync(string numeroTelefono)
         {

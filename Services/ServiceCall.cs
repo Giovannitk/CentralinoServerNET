@@ -52,16 +52,19 @@ namespace ServerCentralino.Services
             callData = new Dictionary<string, CallInfo>();
             processedUniqueIds = new HashSet<string>();
 
-            string? amiHost = configuration["AmiSettings:Host"];
-            string? amiUser = configuration["AmiSettings:Username"];
-            string? amiPassword = configuration["AmiSettings:Password"];
+            string? amiHost = Environment.GetEnvironmentVariable("AMI_HOST");
+            string? amiUser = Environment.GetEnvironmentVariable("AMI_USER");
+            string? amiPassword = Environment.GetEnvironmentVariable("AMI_PASSWORD");
+
+            Console.WriteLine($"{amiHost} - {amiUser} - {amiPassword}");
 
             if (string.IsNullOrWhiteSpace(amiHost) || string.IsNullOrWhiteSpace(amiUser) || string.IsNullOrWhiteSpace(amiPassword))
             {
                 throw new ArgumentException("Le credenziali AMI non sono configurate correttamente.");
             }
 
-            if (!int.TryParse(configuration["AmiSettings:Port"], out int amiPort))
+
+            if (!int.TryParse(Environment.GetEnvironmentVariable("AMI_PORT"), out int amiPort))
             {
                 throw new ArgumentException("Il valore della porta AMI non è valido.");
             }
