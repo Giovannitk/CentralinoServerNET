@@ -174,7 +174,7 @@ namespace ServerCentralino.Controllers
             try
             {
                 var calls = await _callStatisticsService.GetChiamateByNumeroAsync(phoneNumber);
-                _logger.LogInformation($"{calls[0]}");
+                //_logger.LogInformation($"{calls[0]}");
                 return Ok(calls);
             }
             catch (Exception ex)

@@ -32,7 +32,7 @@ namespace ServerCentralino.Services
         {
             try
             {
-                using (var connection = new SqlConnection(_connectionString))
+                using (var connection = new Microsoft.Data.SqlClient.SqlConnection(_connectionString))
                 {
                     await connection.OpenAsync();
 
@@ -41,7 +41,7 @@ namespace ServerCentralino.Services
                 FROM Rubrica
                 WHERE NumeroContatto = @numero";
 
-                    using (var command = new SqlCommand(query, connection))
+                    using (var command = new Microsoft.Data.SqlClient.SqlCommand(query, connection))
                     {
                         command.Parameters.AddWithValue("@numero", numeroTelefono);
 
@@ -71,7 +71,7 @@ namespace ServerCentralino.Services
         {
             try
             {
-                using (var connection = new SqlConnection(_connectionString))
+                using (var connection = new Microsoft.Data.SqlClient.SqlConnection(_connectionString))
                 {
                     await connection.OpenAsync();
                     using (var transaction = connection.BeginTransaction())
@@ -92,7 +92,7 @@ namespace ServerCentralino.Services
                         INSERT INTO Chiamate (NumeroChiamante, NumeroChiamato, TipoChiamata, DataArrivoChiamata, DataFineChiamata, RagioneSocialeChiamante, RagioneSocialeChiamato, UniqueId, Locazione)
                         VALUES (@chiamante, @chiamato, @tipo, @arrivo, @fine, @rsChiamante, @rsChiamato, @uniqueid, @locazione)";
 
-                            using (var command = new SqlCommand(queryInserisciChiamata, connection, transaction))
+                            using (var command = new Microsoft.Data.SqlClient.SqlCommand(queryInserisciChiamata, connection, transaction))
                             {
                                 command.Parameters.AddWithValue("@chiamante", idChiamante);
                                 command.Parameters.AddWithValue("@chiamato", idChiamato);
@@ -134,7 +134,7 @@ namespace ServerCentralino.Services
         {
             try
             {
-                using (var connection = new SqlConnection(_connectionString))
+                using (var connection = new Microsoft.Data.SqlClient.SqlConnection(_connectionString))
                 {
                     await connection.OpenAsync();
 
@@ -164,7 +164,7 @@ namespace ServerCentralino.Services
                     //    query += " AND DataArrivoChiamata = @startTime";
                     //}
 
-                    using (var command = new SqlCommand(query, connection))
+                    using (var command = new Microsoft.Data.SqlClient.SqlCommand(query, connection))
                     {
                         command.Parameters.AddWithValue("@endTime", endTime);
                         command.Parameters.AddWithValue("@linkedId", linkedId);
@@ -210,7 +210,7 @@ namespace ServerCentralino.Services
 
             try
             {
-                using (var connection = new SqlConnection(_connectionString))
+                using (var connection = new Microsoft.Data.SqlClient.SqlConnection(_connectionString))
                 {
                     await connection.OpenAsync();
 
@@ -228,7 +228,7 @@ namespace ServerCentralino.Services
         WHERE NumeroChiamante = @numero OR NumeroChiamato = @numero
         ORDER BY DataArrivoChiamata DESC";
 
-                    using (var command = new SqlCommand(query, connection))
+                    using (var command = new Microsoft.Data.SqlClient.SqlCommand(query, connection))
                     {
                         command.Parameters.AddWithValue("@numero", numeroTelefono);
 
@@ -260,11 +260,11 @@ namespace ServerCentralino.Services
             return chiamate;
         }
 
-        private async Task<string> TrovaOInserisciNumeroAsync(SqlConnection connection, SqlTransaction transaction, string numero)
+        private async Task<string> TrovaOInserisciNumeroAsync(Microsoft.Data.SqlClient.SqlConnection connection, Microsoft.Data.SqlClient.SqlTransaction transaction, string numero)
         {
             // Cerca il numero nella rubrica
             string queryCerca = "SELECT ID FROM Rubrica WHERE NumeroContatto = @numero";
-            using (var command = new SqlCommand(queryCerca, connection, transaction))
+            using (var command = new Microsoft.Data.SqlClient.SqlCommand(queryCerca, connection, transaction))
             {
                 command.Parameters.AddWithValue("@numero", numero);
                 var result = await command.ExecuteScalarAsync();
@@ -275,7 +275,7 @@ namespace ServerCentralino.Services
 
             // Se non esiste, lo inserisce
             string queryInserisci = "INSERT INTO Rubrica (NumeroContatto) OUTPUT INSERTED.ID VALUES (@numero)";
-            using (var command = new SqlCommand(queryInserisci, connection, transaction))
+            using (var command = new Microsoft.Data.SqlClient.SqlCommand(queryInserisci, connection, transaction))
             {
                 command.Parameters.AddWithValue("@numero", numero);
                 return numero;
@@ -285,7 +285,7 @@ namespace ServerCentralino.Services
 
         public List<Chiamata> GetAllCalls()
         {
-            using (var connection = new SqlConnection(_connectionString))
+            using (var connection = new Microsoft.Data.SqlClient.SqlConnection(_connectionString))
             {
                 connection.Open();
                 var query = "SELECT * FROM Chiamate"; // Assicurati che la tabella sia corretta
@@ -297,7 +297,7 @@ namespace ServerCentralino.Services
         {
             try
             {
-                using (var connection = new SqlConnection(_connectionString))
+                using (var connection = new Microsoft.Data.SqlClient.SqlConnection(_connectionString))
                 {
                     await connection.OpenAsync();
 
@@ -316,7 +316,7 @@ namespace ServerCentralino.Services
                     VALUES (@numero, @ragioneSociale, @citta, @interno)
                 END";
 
-                    using (var command = new SqlCommand(query, connection))
+                    using (var command = new Microsoft.Data.SqlClient.SqlCommand(query, connection))
                     {
                         command.Parameters.AddWithValue("@numero", numeroContatto);
                         command.Parameters.AddWithValue("@ragioneSociale", (object)ragioneSociale ?? DBNull.Value);
@@ -339,7 +339,7 @@ namespace ServerCentralino.Services
         {
             try
             {
-                using (var connection = new SqlConnection(_connectionString))
+                using (var connection = new Microsoft.Data.SqlClient.SqlConnection(_connectionString))
                 {
                     await connection.OpenAsync();
 
@@ -351,7 +351,7 @@ namespace ServerCentralino.Services
                 INNER JOIN Rubrica r2 ON c.NumeroChiamatoID = r2.ID
                 WHERE c.ID = @id";
 
-                    using (var command = new SqlCommand(query, connection))
+                    using (var command = new Microsoft.Data.SqlClient.SqlCommand(query, connection))
                     {
                         command.Parameters.AddWithValue("@id", id);
 
@@ -386,7 +386,7 @@ namespace ServerCentralino.Services
         {
             try
             {
-                using (var connection = new SqlConnection(_connectionString))
+                using (var connection = new Microsoft.Data.SqlClient.SqlConnection(_connectionString))
                 {
                     await connection.OpenAsync();
 
@@ -403,7 +403,7 @@ namespace ServerCentralino.Services
                 AND r2.NumeroContatto = @calledNumber
                 ORDER BY c.DataFineChiamata DESC";
 
-                    using (var command = new SqlCommand(query, connection))
+                    using (var command = new Microsoft.Data.SqlClient.SqlCommand(query, connection))
                     {
                         command.Parameters.AddWithValue("@callerNumber", callerNumber);
                         command.Parameters.AddWithValue("@calledNumber", calledNumber);
@@ -440,7 +440,7 @@ namespace ServerCentralino.Services
         {
             try
             {
-                using (var connection = new SqlConnection(_connectionString))
+                using (var connection = new Microsoft.Data.SqlClient.SqlConnection(_connectionString))
                 {
                     await connection.OpenAsync();
                     using (var transaction = connection.BeginTransaction())
@@ -455,7 +455,7 @@ namespace ServerCentralino.Services
 
                             bool exists = false;
 
-                            using (var command = new SqlCommand(queryVerifica, connection, transaction))
+                            using (var command = new Microsoft.Data.SqlClient.SqlCommand(queryVerifica, connection, transaction))
                             {
                                 command.Parameters.AddWithValue("@id", callId);
                                 exists = (int)await command.ExecuteScalarAsync() > 0;
@@ -469,7 +469,7 @@ namespace ServerCentralino.Services
                             SET Locazione = @location
                             WHERE ID = @id";
 
-                                using (var command = new SqlCommand(queryAggiorna, connection, transaction))
+                                using (var command = new Microsoft.Data.SqlClient.SqlCommand(queryAggiorna, connection, transaction))
                                 {
                                     command.Parameters.AddWithValue("@location", location);
                                     command.Parameters.AddWithValue("@id", callId);
@@ -508,7 +508,7 @@ namespace ServerCentralino.Services
         {
             try
             {
-                using (var connection = new SqlConnection(_connectionString))
+                using (var connection = new Microsoft.Data.SqlClient.SqlConnection(_connectionString))
                 {
                     await connection.OpenAsync();
 
@@ -519,7 +519,7 @@ namespace ServerCentralino.Services
                     RagioneSocialeChiamato = @calledName
                 WHERE UniqueID = @linkedId";
 
-                    using (var command = new SqlCommand(query, connection))
+                    using (var command = new Microsoft.Data.SqlClient.SqlCommand(query, connection))
                     {
                         command.Parameters.AddWithValue("@calledNumber", calledNumber);
                         command.Parameters.AddWithValue("@calledName", calledName);
@@ -541,7 +541,7 @@ namespace ServerCentralino.Services
         {
             try
             {
-                using (var connection = new SqlConnection(_connectionString))
+                using (var connection = new Microsoft.Data.SqlClient.SqlConnection(_connectionString))
                 {
                     await connection.OpenAsync();
 
@@ -551,7 +551,7 @@ namespace ServerCentralino.Services
                 WHERE UniqueID = @callKey
                 AND DataArrivoChiamata >= DATEADD(minute, -5, GETDATE())";
 
-                    using (var command = new SqlCommand(query, connection))
+                    using (var command = new Microsoft.Data.SqlClient.SqlCommand(query, connection))
                     {
                         command.Parameters.AddWithValue("@callKey", callKey);
                         int count = (int)await command.ExecuteScalarAsync();
@@ -568,7 +568,7 @@ namespace ServerCentralino.Services
 
         public async Task<List<Contatto>> GetContattiIncompletiAsync()
         {
-            using var conn = new SqlConnection(_connectionString);
+            using var conn = new Microsoft.Data.SqlClient.SqlConnection(_connectionString);
             var sql = "SELECT * FROM Rubrica WHERE RagioneSociale IS NULL OR CittaProvenienza IS NULL";
 
             return (await conn.QueryAsync<Contatto>(sql)).ToList();
@@ -578,13 +578,13 @@ namespace ServerCentralino.Services
         {
             try
             {
-                using (var connection = new SqlConnection(_connectionString))
+                using (var connection = new Microsoft.Data.SqlClient.SqlConnection(_connectionString))
                 {
                     await connection.OpenAsync();
 
                     string query = "DELETE FROM Rubrica WHERE NumeroContatto = @numero";
 
-                    using (var command = new SqlCommand(query, connection))
+                    using (var command = new Microsoft.Data.SqlClient.SqlCommand(query, connection))
                     {
                         command.Parameters.AddWithValue("@numero", phoneNumber);
 
@@ -614,13 +614,13 @@ namespace ServerCentralino.Services
         {
             try
             {
-                using (var connection = new SqlConnection(_connectionString))
+                using (var connection = new Microsoft.Data.SqlClient.SqlConnection(_connectionString))
                 {
                     await connection.OpenAsync();
 
                     string query = "DELETE FROM Chiamate WHERE UniqueID = @uniqueId";
 
-                    using (var command = new SqlCommand(query, connection))
+                    using (var command = new Microsoft.Data.SqlClient.SqlCommand(query, connection))
                     {
                         command.Parameters.AddWithValue("@uniqueId", uniqueId);
 

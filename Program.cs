@@ -30,6 +30,8 @@ namespace ServerCentralino
             {
                 var builder = WebApplication.CreateBuilder(args);
 
+                
+
                 // Logging
                 builder.Logging.AddSimpleConsole(options =>
                 {
