@@ -3,6 +3,9 @@ using AsterNET.Manager.Action;
 using AsterNET.Manager.Event;
 using Microsoft.IdentityModel.Tokens;
 using System.Linq.Expressions;
+using System.Windows;
+using ConfigTool;
+using static Dapper.SqlMapper;
 
 namespace ServerCentralino.Services
 {
@@ -12,8 +15,8 @@ namespace ServerCentralino.Services
         private readonly ILogger<ServiceCall> _logger;
         private readonly DatabaseService _callStatisticsService;
 
-        private Dictionary<string, CallInfo> callData; // Memorizza le informazioni sulle chiamate
-        private HashSet<string> processedUniqueIds; // Memorizza gli UniqueId già processati
+        private Dictionary<string, CallInfo> callData; // Memorizzo le informazioni sulle chiamate
+        private HashSet<string> processedUniqueIds; // Memorizzo gli UniqueId già processati
         private readonly object _lock = new object(); // Oggetto per il locking
 
         private class CallInfo
@@ -48,7 +51,7 @@ namespace ServerCentralino.Services
             _logger = logger;
             _callStatisticsService = callStatisticsService;
 
-            // Inizializza callData
+            // Inizializzo callData
             callData = new Dictionary<string, CallInfo>();
             processedUniqueIds = new HashSet<string>();
 
@@ -58,9 +61,11 @@ namespace ServerCentralino.Services
 
             string? amiHost = configuration["AmiSettings:Host"];
             string? amiUser = configuration["AmiSettings:Username"];
-            string? amiPassword = configuration["AmiSettings:Password"];
+            //string? amiPassword = configuration["AmiSettings:Password"];
+            string? amiPassword = CryptoHelper.Decrypt(configuration["AmiSettings:Password"]);
 
-            Console.WriteLine($"{amiHost} - {amiUser} - {amiPassword}");
+
+            //Console.WriteLine($"{amiHost} - {amiUser} - {amiPassword}");
 
             if (string.IsNullOrWhiteSpace(amiHost) || string.IsNullOrWhiteSpace(amiUser) || string.IsNullOrWhiteSpace(amiPassword))
             {
@@ -73,6 +78,8 @@ namespace ServerCentralino.Services
             {
                 throw new ArgumentException("Il valore della porta AMI non è valido.");
             }
+
+
 
             _manager = new ManagerConnection(amiHost, amiPort, amiUser, amiPassword);
         }
@@ -98,10 +105,13 @@ namespace ServerCentralino.Services
                 _manager.BlindTransfer += OnBlindTransfer;
 
                 _logger.LogInformation("AMI Service started and listening for events...");
+
             }
             catch (Exception ex)
             {
                 _logger.LogError($"Errore nella connessione ad AMI: {ex.Message}");
+                MessageBox.Show($"Errore nella connessione ad AMI: {ex.Message}");
+                Application.Current.Shutdown();
             }
         }
 
@@ -151,14 +161,14 @@ namespace ServerCentralino.Services
         {
             _logger.LogInformation($"1. Nuovo canale attivo: {e.Channel} - id:{e.UniqueId}");
 
-            // Recupera il linkedid dagli attributi se presente
+            // Recupero il linkedid dagli attributi se presente
             string linkedId = e.Attributes.ContainsKey("linkedid") ? e.Attributes["linkedid"] : null;
             string callKey = !string.IsNullOrEmpty(linkedId) ? linkedId : e.UniqueId;
 
             string _callerNumber = e.CallerIdNum;
             bool flag_interno = false;
 
-            // Verifica se il canale è il destinatario della chiamata
+            // Verifico se il canale è il destinatario della chiamata
             if (e.Channel.StartsWith("PJSIP/4") || e.Channel.StartsWith("SIP/4"))
             {
                 //_logger.LogInformation("2.1. Chiamata da interno.");
@@ -192,17 +202,17 @@ namespace ServerCentralino.Services
 
                 if (!string.IsNullOrEmpty(_callerNumber) && !processedUniqueIds.Contains(callKey))
                 {
-                    // 1. Verifica se la chiamata esiste già nel database
+                    // 1. Verifico se la chiamata esiste già nel database
                     bool chiamataEsistente = await _callStatisticsService.CheckExistingCallAsync(callKey);
 
                     if (chiamataEsistente)
                     {
                        // _logger.LogInformation($"3.5. Chiamata già presente nel database - Key: {callKey}");
-                        processedUniqueIds.Add(callKey); // Marca come processata comunque
+                        processedUniqueIds.Add(callKey); // Marco come processata comunque
                         return;
                     }
 
-                    processedUniqueIds.Add(callKey); // Segna la chiave come processata
+                    processedUniqueIds.Add(callKey); // Segno la chiave come processata
 
                     if (!callData.ContainsKey(callKey))
                     {
@@ -241,11 +251,11 @@ namespace ServerCentralino.Services
                             _callerNumber,
                             string.Empty, // CalleeNumber vuoto inizialmente
                             ragioneSociale,
-                            string.Empty, // Ragione sociale chiamato vuota inizialmente
+                            string.Empty, // Ragione sociale chiamato vuoto inizialmente
                             callData[callKey].StartTime,
                             tipoChiamata,
                             callKey,
-                            ragioneSociale); // Passa callKey (linkedId o UniqueId)
+                            ragioneSociale); // Passo callKey (linkedId o UniqueId)
 
                         _logger.LogInformation($"4.3. Chiamata iniziata: {_callerNumber}, Key: {callKey} (LinkedId: {linkedId ?? "null"}, UniqueId: {e.UniqueId})");
                     }
@@ -339,7 +349,7 @@ namespace ServerCentralino.Services
 
             try
             {
-                // Recupera il linkedid (identificatore univoco della chiamata)
+                // Recupero il linkedid (identificatore univoco della chiamata)
                 string linkedId = e.Attributes.ContainsKey("linkedid") ? e.Attributes["linkedid"] : null;
 
                 if (string.IsNullOrEmpty(linkedId))
@@ -348,7 +358,7 @@ namespace ServerCentralino.Services
                     return;
                 }
 
-                // Recupera il numero del chiamato dagli attributi
+                // Recupero il numero del chiamato dagli attributi
                 string calledNumber = e.Attributes.ContainsKey("destcalleridnum") ? e.Attributes["destcalleridnum"] : null;
 
                 if (string.IsNullOrEmpty(calledNumber))
@@ -359,7 +369,7 @@ namespace ServerCentralino.Services
 
                 _logger.LogInformation($"D: Chiamata collegata - LinkedId: {linkedId}, Numero chiamato: {calledNumber}");
 
-                // Recupera anche il nome del chiamato se disponibile
+                // Recupero anche il nome del chiamato se disponibile
                 string calledName = e.Attributes.ContainsKey("destcalleridname") ? e.Attributes["destcalleridname"] : string.Empty;
 
                 // 1. Cerco nella callData in memoria
@@ -484,7 +494,7 @@ namespace ServerCentralino.Services
                 }
             }
 
-            // Rimuovi dalla callData indipendentemente dall'esito
+            // Rimuovo dalla callData indipendentemente dall'esito
             callData.Remove(linkedId);
         }
 

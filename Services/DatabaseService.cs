@@ -6,6 +6,7 @@ using Microsoft.Data.SqlClient;
 using Dapper;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using System.Windows;
 
 namespace ServerCentralino.Services
 {
@@ -14,17 +15,42 @@ namespace ServerCentralino.Services
         private readonly string? _connectionString;
         private readonly ILogger<DatabaseService> _logger;
 
+        private string DecryptPasswordInConnectionString(string connectionString)
+        {
+            var builder = new System.Data.SqlClient.SqlConnectionStringBuilder(connectionString);
+
+            if (!string.IsNullOrEmpty(builder.Password))
+            {
+                builder.Password = CryptoHelper.Decrypt(builder.Password);
+            }
+
+            return builder.ConnectionString;
+        }
+
         public DatabaseService(IConfiguration configuration, ILogger<DatabaseService> logger)
         {
-            //var db_server = Environment.GetEnvironmentVariable("DB_SERVER");
-            //var db_name = Environment.GetEnvironmentVariable("DB_NAME");
-            //var db_user = Environment.GetEnvironmentVariable("DB_USER");
-            //var db_password = Environment.GetEnvironmentVariable("DB_PASSWORD");
-            //_connectionString = $"Server={db_server};Database={db_name};User Id={db_user};Password={db_password};TrustServerCertificate=True";
-
-            _connectionString = configuration.GetConnectionString("DefaultConnection");
-            Console.WriteLine($"{_connectionString}");
             _logger = logger;
+
+            var rawConnectionString = configuration.GetConnectionString("DefaultConnection");
+            _connectionString = DecryptPasswordInConnectionString(rawConnectionString);
+
+            // Test immediato della connessione
+            try
+            {
+                using var connection = new Microsoft.Data.SqlClient.SqlConnection(_connectionString);
+                connection.Open();
+
+                using var command = new Microsoft.Data.SqlClient.SqlCommand("SELECT 1", connection);
+                command.ExecuteScalar(); // Lancia eccezione se le credenziali non sono valide
+
+                _logger.LogInformation("Connessione al database riuscita.");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"Errore nella connessione al database: {ex.Message}");
+                MessageBox.Show($"Errore nella connessione al database: {ex.Message}", "Errore critico", MessageBoxButton.OK, MessageBoxImage.Error);
+                Application.Current.Shutdown(); // Chiude l'app
+            }
         }
 
 
@@ -78,10 +104,10 @@ namespace ServerCentralino.Services
                     {
                         try
                         {
-                            // Trova o inserisce il numero del chiamante nella Rubrica
+                            // Trovo o inserisco il numero del chiamante nella Rubrica
                             string idChiamante = await TrovaOInserisciNumeroAsync(connection, transaction, numeroChiamante);
 
-                            // Trova o inserisce il numero del chiamato (puoi usare un valore predefinito o un altro numero)
+                            // Trovo o inserisco il numero del chiamato (può essere usato un valore predefinito o un altro numero)
                             string idChiamato = "0000000000"; //await TrovaOInserisciNumeroAsync(connection, transaction, numeroChiamato); // Usa un valore predefinito o personalizzato
 
                             // Data di arrivo della chiamata
@@ -96,7 +122,7 @@ namespace ServerCentralino.Services
                             {
                                 command.Parameters.AddWithValue("@chiamante", idChiamante);
                                 command.Parameters.AddWithValue("@chiamato", idChiamato);
-                                command.Parameters.AddWithValue("@tipo", tipoChiamata); // Tipo di chiamata (puoi personalizzarlo)
+                                command.Parameters.AddWithValue("@tipo", tipoChiamata); // Tipo di chiamata 
                                 command.Parameters.AddWithValue("@arrivo", dataArrivo); // Data di arrivo della chiamata
                                 command.Parameters.AddWithValue("@fine", dataArrivo); // Data di fine chiamata inizialmente uguale a dataArrivo
                                 command.Parameters.AddWithValue("@rsChiamante", ragioneSocialeChiamante);
@@ -262,7 +288,7 @@ namespace ServerCentralino.Services
 
         private async Task<string> TrovaOInserisciNumeroAsync(Microsoft.Data.SqlClient.SqlConnection connection, Microsoft.Data.SqlClient.SqlTransaction transaction, string numero)
         {
-            // Cerca il numero nella rubrica
+            // Cerco il numero nella rubrica
             string queryCerca = "SELECT ID FROM Rubrica WHERE NumeroContatto = @numero";
             using (var command = new Microsoft.Data.SqlClient.SqlCommand(queryCerca, connection, transaction))
             {
@@ -447,7 +473,7 @@ namespace ServerCentralino.Services
                     {
                         try
                         {
-                            // Verifica prima che la chiamata esista
+                            // Verifico prima che la chiamata esista
                             string queryVerifica = @"
                         SELECT COUNT(1) 
                         FROM Chiamate 
@@ -463,7 +489,7 @@ namespace ServerCentralino.Services
 
                             if (exists)
                             {
-                                // Aggiorna il campo Locazione
+                                // Aggiorno il campo Locazione
                                 string queryAggiorna = @"
                             UPDATE Chiamate
                             SET Locazione = @location
@@ -562,7 +588,7 @@ namespace ServerCentralino.Services
             catch (Exception ex)
             {
                 _logger.LogError($"Errore durante la verifica della chiamata esistente: {ex.Message}");
-                return false; // In caso di errore, procedi comunque
+                return false; // In caso di errore, si procede comunque
             }
         }
 

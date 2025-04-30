@@ -10,7 +10,7 @@ namespace ServerCentralino
         [STAThread]
         static void Main(string[] args)
         {
-            // Termina eventuali processi duplicati prima di tutto
+            // Vengono terminati eventuali processi duplicati prima di tutto
             TerminaProcessiDuplicati();
 
             if (args.Length > 0 && args[0].ToLower() == "setup")

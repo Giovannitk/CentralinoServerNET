@@ -214,7 +214,7 @@ namespace ServerCentralino.Controllers
         {
             try
             {
-                // 1. Recupera la chiamata usando i parametri forniti
+                // 1. Recupero la chiamata usando i parametri forniti
                 var chiamata = await _callStatisticsService.GetChiamataByNumbers(callerNumber, calledNumber, endCall);
 
                 if (chiamata == null)
@@ -223,7 +223,7 @@ namespace ServerCentralino.Controllers
                     return NotFound();
                 }
 
-                // 2. Elimina la chiamata usando l'UniqueID
+                // 2. Elimino la chiamata usando l'UniqueID
                 var result = await _callStatisticsService.DeleteChiamataByUniqueIdAsync(chiamata.UniqueID);
 
                 if (result)
