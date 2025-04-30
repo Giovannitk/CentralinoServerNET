@@ -28,18 +28,25 @@ namespace ServerCentralino
         {
             try
             {
+                bool silentMode = args.Any(a => a.Equals("silent", StringComparison.OrdinalIgnoreCase));
+
                 var builder = WebApplication.CreateBuilder(args);
 
-                
-
-                // Logging
-                builder.Logging.AddSimpleConsole(options =>
+                // Disattiva logging se modalità silent
+                if (silentMode)
                 {
-                    options.TimestampFormat = "[yyyy-MM-dd HH:mm:ss] ";
-                    options.IncludeScopes = false;
-                    options.SingleLine = true;
-                    options.UseUtcTimestamp = false;
-                });
+                    builder.Logging.ClearProviders(); // Rimuove tutti i provider di log
+                }
+                else
+                {
+                    builder.Logging.AddSimpleConsole(options =>
+                    {
+                        options.TimestampFormat = "[yyyy-MM-dd HH:mm:ss] ";
+                        options.IncludeScopes = false;
+                        options.SingleLine = true;
+                        options.UseUtcTimestamp = false;
+                    });
+                }
 
                 // Servizi
                 builder.Services.AddSingleton<ServiceCall>();
@@ -52,11 +59,8 @@ namespace ServerCentralino
 
                 var app = builder.Build();
 
-                if (app.Environment.IsDevelopment())
-                {
-                    app.UseSwagger();
-                    app.UseSwaggerUI();
-                }
+                app.UseSwagger();
+                app.UseSwaggerUI();
 
                 app.UseHttpsRedirection();
                 app.UseAuthorization();
@@ -69,6 +73,7 @@ namespace ServerCentralino
                 Console.WriteLine($"Errore avvio applicazione: {ex.Message}");
             }
         }
+
 
         static void TerminaProcessiDuplicati()
         {
