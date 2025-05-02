@@ -672,6 +672,46 @@ namespace ServerCentralino.Services
             }
         }
 
+
+        public async Task<List<Contatto>> GetAllContattiAsync()
+        {
+            var contatti = new List<Contatto>();
+
+            try
+            {
+                using (var connection = new Microsoft.Data.SqlClient.SqlConnection(_connectionString))
+                {
+                    await connection.OpenAsync();
+
+                    string query = @"
+                SELECT NumeroContatto, RagioneSociale, CittaProvenienza, Interno
+                FROM Rubrica";
+
+                    using (var command = new Microsoft.Data.SqlClient.SqlCommand(query, connection))
+                    using (var reader = await command.ExecuteReaderAsync())
+                    {
+                        while (await reader.ReadAsync())
+                        {
+                            contatti.Add(new Contatto
+                            {
+                                NumeroContatto = reader["NumeroContatto"].ToString(),
+                                RagioneSociale = reader["RagioneSociale"].ToString(),
+                                Citta = reader["CittaProvenienza"].ToString(),
+                                Interno = reader["Interno"] != DBNull.Value ? Convert.ToInt32(reader["Interno"]) : (int?)null
+                            });
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"Errore durante il recupero dei contatti: {ex.Message}");
+            }
+
+            return contatti;
+        }
+
+
     }
 
     public class Contatto

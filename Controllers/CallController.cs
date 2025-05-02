@@ -74,6 +74,27 @@ namespace ServerCentralino.Controllers
             }
         }
 
+        [HttpGet("all-contacts")]
+        public async Task<IActionResult> GetAllContacts()
+        {
+            try
+            {
+                var contacts = await _callStatisticsService.GetAllContattiAsync();
+
+                if (contacts == null || !contacts.Any())
+                {
+                    return NotFound("Nessun contatto trovato.");
+                }
+
+                return Ok(contacts);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { Message = "Errore durante il recupero dei contatti.", Error = ex.Message });
+            }
+        }
+
+
         [HttpPost("add-contact")]
         public async Task<IActionResult> AddContact([FromBody] AddContactRequest request)
         {
