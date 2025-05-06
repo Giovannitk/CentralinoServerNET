@@ -63,7 +63,7 @@ namespace ServerCentralino.Services
                     await connection.OpenAsync();
 
                     string query = @"
-                SELECT RagioneSociale, CittaProvenienza
+                SELECT RagioneSociale, CittaProvenienza, Interno
                 FROM Rubrica
                 WHERE NumeroContatto = @numero";
 
@@ -78,7 +78,8 @@ namespace ServerCentralino.Services
                                 return new Contatto
                                 {
                                     RagioneSociale = reader["RagioneSociale"].ToString(),
-                                    Citta = reader["CittaProvenienza"].ToString()
+                                    Citta = reader["CittaProvenienza"].ToString(),
+                                    Interno = reader["Interno"] != DBNull.Value ? Convert.ToInt32(reader["Interno"]) : 0
                                 };
                             }
                         }

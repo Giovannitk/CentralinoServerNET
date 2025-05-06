@@ -295,6 +295,18 @@ namespace ServerCentralino.Controllers
                 return StatusCode(StatusCodes.Status500InternalServerError, "Errore durante l'eliminazione");
             }
         }
+
+        // Test Connection
+        [HttpGet("test-connection")]
+        public IActionResult TestConnection()
+        {
+            return Ok(new
+            {
+                Status = "Success",
+                Message = "Server is reachable",
+                Timestamp = DateTime.UtcNow
+            });
+        }
     }
 
     public class MakeCallRequest
