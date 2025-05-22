@@ -94,7 +94,7 @@ namespace ServerCentralino.Services
             return null;
         }
 
-        public async Task RegisterCall(string numeroChiamante, string numeroChiamato, string ragioneSocialeChiamante, string ragioneSocialeChiamato, DateTime starttime, string tipoChiamata, string uniqueId, string locazione)
+        public async Task RegisterCall(string numeroChiamante, string numeroChiamato, string ragioneSocialeChiamante, string ragioneSocialeChiamato, DateTime starttime, string tipoChiamata, string uniqueId, string locazione, string? campoExtra1 = null)
         {
             try
             {
@@ -116,8 +116,8 @@ namespace ServerCentralino.Services
 
                             // Inserisce la chiamata nella tabella Chiamate
                             string queryInserisciChiamata = @"
-                        INSERT INTO Chiamate (NumeroChiamante, NumeroChiamato, TipoChiamata, DataArrivoChiamata, DataFineChiamata, RagioneSocialeChiamante, RagioneSocialeChiamato, UniqueId, Locazione)
-                        VALUES (@chiamante, @chiamato, @tipo, @arrivo, @fine, @rsChiamante, @rsChiamato, @uniqueid, @locazione)";
+                        INSERT INTO Chiamate (NumeroChiamante, NumeroChiamato, TipoChiamata, DataArrivoChiamata, DataFineChiamata, RagioneSocialeChiamante, RagioneSocialeChiamato, UniqueId, Locazione, CampoExtra1)
+                        VALUES (@chiamante, @chiamato, @tipo, @arrivo, @fine, @rsChiamante, @rsChiamato, @uniqueid, @locazione, @campoExtra1)";
 
                             using (var command = new Microsoft.Data.SqlClient.SqlCommand(queryInserisciChiamata, connection, transaction))
                             {
@@ -130,6 +130,7 @@ namespace ServerCentralino.Services
                                 command.Parameters.AddWithValue("@rsChiamato", ragioneSocialeChiamato);
                                 command.Parameters.AddWithValue("@uniqueid", uniqueId);
                                 command.Parameters.AddWithValue("@locazione", locazione);
+                                command.Parameters.AddWithValue("@campoExtra1", (object)campoExtra1 ?? DBNull.Value);
 
                                 await command.ExecuteNonQueryAsync();
                             }
@@ -145,7 +146,6 @@ namespace ServerCentralino.Services
                     }
                 }
             }
-            
             catch (Exception ex)
             {
                 _logger.LogError($"4.2.3. Errore di connessione al database: {ex.Message}");
@@ -371,12 +371,18 @@ namespace ServerCentralino.Services
                     await connection.OpenAsync();
 
                     string query = @"
-                SELECT c.ID, c.TipoChiamata, c.DataArrivoChiamata, c.DataFineChiamata, c.Extra,
-                       r1.NumeroContatto AS NumeroChiamante, r2.NumeroContatto AS NumeroChiamato
-                FROM Chiamate c
-                INNER JOIN Rubrica r1 ON c.NumeroChiamanteID = r1.ID
-                INNER JOIN Rubrica r2 ON c.NumeroChiamatoID = r2.ID
-                WHERE c.ID = @id";
+                SELECT 
+                    NumeroChiamante, 
+                    NumeroChiamato,
+                    RagioneSocialeChiamante,
+                    RagioneSocialeChiamato,
+                    DataArrivoChiamata,
+                    DataFineChiamata,
+                    TipoChiamata,
+                    Locazione,
+                    UniqueID
+                FROM Chiamate
+                WHERE ID = @id";
 
                     using (var command = new Microsoft.Data.SqlClient.SqlCommand(query, connection))
                     {
@@ -388,13 +394,16 @@ namespace ServerCentralino.Services
                             {
                                 return new Chiamata
                                 {
-                                    //ID = reader.GetInt32(0),
-                                    TipoChiamata = reader["TipoChiamata"].ToString(),
-                                    DataArrivoChiamata = reader.GetDateTime(2),
-                                    DataFineChiamata = reader.GetDateTime(3),
-                                    //Extra = reader["Extra"] != DBNull.Value ? reader["Extra"].ToString() : null,
-                                    NumeroChiamante = reader["NumeroChiamante"].ToString(),
-                                    NumeroChiamato = reader["NumeroChiamato"].ToString()
+                                    // Nota: gli indici partono da 0 ora che abbiamo rimosso ID dalla SELECT
+                                    NumeroChiamante = reader.IsDBNull(0) ? null : reader.GetString(0),
+                                    NumeroChiamato = reader.IsDBNull(1) ? null : reader.GetString(1),
+                                    RagioneSocialeChiamante = reader.IsDBNull(2) ? null : reader.GetString(2),
+                                    RagioneSocialeChiamato = reader.IsDBNull(3) ? null : reader.GetString(3),
+                                    DataArrivoChiamata = reader.GetDateTime(4),
+                                    DataFineChiamata = reader.GetDateTime(5),
+                                    TipoChiamata = reader.IsDBNull(6) ? null : reader.GetString(6),
+                                    Locazione = reader.IsDBNull(7) ? null : reader.GetString(7),
+                                    UniqueID = reader.IsDBNull(8) ? null : reader.GetString(8)
                                 };
                             }
                         }
@@ -404,10 +413,145 @@ namespace ServerCentralino.Services
             catch (Exception ex)
             {
                 _logger.LogError($"Errore nel recupero della chiamata: {ex.Message}");
+                throw;
             }
 
             return null;
         }
+
+
+        // Aggiungi chiamata
+        public async Task<bool> AggiungiChiamataAsync(Chiamata chiamata)
+        {
+            try
+            {
+                using (var connection = new Microsoft.Data.SqlClient.SqlConnection(_connectionString))
+                {
+                    await connection.OpenAsync();
+
+                    string query = @"
+            INSERT INTO Chiamate 
+            (NumeroChiamante, NumeroChiamato, TipoChiamata, DataArrivoChiamata, DataFineChiamata, UniqueID, Locazione, RagioneSocialeChiamante, RagioneSocialeChiamato, CampoExtra1)
+            VALUES 
+            (@NumeroChiamante, @NumeroChiamato, @TipoChiamata, @DataArrivoChiamata, @DataFineChiamata, @UniqueID, @Locazione, @RagioneSocialeChiamante, @RagioneSocialeChiamato, @CampoExtra1)";
+
+                    using (var command = new Microsoft.Data.SqlClient.SqlCommand(query, connection))
+                    {
+                        command.Parameters.AddWithValue("@NumeroChiamante", chiamata.NumeroChiamante);
+                        command.Parameters.AddWithValue("@NumeroChiamato", chiamata.NumeroChiamato);
+                        command.Parameters.AddWithValue("@TipoChiamata", chiamata.TipoChiamata);
+                        command.Parameters.AddWithValue("@DataArrivoChiamata", chiamata.DataArrivoChiamata);
+                        command.Parameters.AddWithValue("@DataFineChiamata", chiamata.DataFineChiamata);
+                        command.Parameters.AddWithValue("@UniqueID", chiamata.UniqueID ?? (object)DBNull.Value);
+                        command.Parameters.AddWithValue("@Locazione", chiamata.Locazione ?? (object)DBNull.Value);
+                        command.Parameters.AddWithValue("@RagioneSocialeChiamante", chiamata.RagioneSocialeChiamante ?? (object)DBNull.Value);
+                        command.Parameters.AddWithValue("@RagioneSocialeChiamato", chiamata.RagioneSocialeChiamato ?? (object)DBNull.Value);
+                        command.Parameters.AddWithValue("@CampoExtra1", chiamata.CampoExtra1 ?? (object)DBNull.Value);
+
+                        int rows = await command.ExecuteNonQueryAsync();
+                        return rows > 0;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"Errore durante l'inserimento della chiamata: {ex.Message}");
+                return false;
+            }
+        }
+
+
+        // Aggiorna Chiamata
+        public async Task<bool> AggiornaChiamataAsync(Chiamata chiamata)
+        {
+            try
+            {
+                using (var connection = new Microsoft.Data.SqlClient.SqlConnection(_connectionString))
+                {
+                    await connection.OpenAsync();
+
+                    string query = @"
+            UPDATE Chiamate
+            SET 
+                NumeroChiamante = @NumeroChiamante,
+                NumeroChiamato = @NumeroChiamato,
+                RagioneSocialeChiamante = @RagioneSocialeChiamante,
+                RagioneSocialeChiamato = @RagioneSocialeChiamato,
+                TipoChiamata = @TipoChiamata,
+                DataArrivoChiamata = @DataArrivoChiamata,
+                DataFineChiamata = @DataFineChiamata,
+                UniqueID = @UniqueID,
+                Locazione = @Locazione,
+                CampoExtra1 = @CampoExtra1
+            WHERE ID = @ID";
+
+                    using (var command = new Microsoft.Data.SqlClient.SqlCommand(query, connection))
+                    {
+                        command.Parameters.AddWithValue("@NumeroChiamante", chiamata.NumeroChiamante ?? (object)DBNull.Value);
+                        command.Parameters.AddWithValue("@NumeroChiamato", chiamata.NumeroChiamato ?? (object)DBNull.Value);
+                        command.Parameters.AddWithValue("@RagioneSocialeChiamante", chiamata.RagioneSocialeChiamante ?? (object)DBNull.Value);
+                        command.Parameters.AddWithValue("@RagioneSocialeChiamato", chiamata.RagioneSocialeChiamato ?? (object)DBNull.Value);
+                        command.Parameters.AddWithValue("@TipoChiamata", chiamata.TipoChiamata ?? (object)DBNull.Value);
+                        command.Parameters.AddWithValue("@DataArrivoChiamata", chiamata.DataArrivoChiamata);
+                        command.Parameters.AddWithValue("@DataFineChiamata", chiamata.DataFineChiamata);
+                        command.Parameters.AddWithValue("@UniqueID", chiamata.UniqueID ?? (object)DBNull.Value);
+                        command.Parameters.AddWithValue("@Locazione", chiamata.Locazione ?? (object)DBNull.Value);
+                        command.Parameters.AddWithValue("@CampoExtra1", chiamata.CampoExtra1 ?? (object)DBNull.Value);
+                        command.Parameters.AddWithValue("@ID", chiamata.Id);
+
+                        int rows = await command.ExecuteNonQueryAsync();
+                        return rows > 0;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"Errore durante l'aggiornamento della chiamata con ID {chiamata.Id}: {ex.Message}");
+                return false;
+            }
+        }
+
+
+
+
+        // Elimina Chiamata
+        public async Task<bool> DeleteChiamataByIdAsync(int id)
+        {
+            try
+            {
+                using (var connection = new Microsoft.Data.SqlClient.SqlConnection(_connectionString))
+                {
+                    await connection.OpenAsync();
+
+                    string query = "DELETE FROM Chiamate WHERE ID = @id";
+
+                    using (var command = new Microsoft.Data.SqlClient.SqlCommand(query, connection))
+                    {
+                        command.Parameters.AddWithValue("@id", id);
+
+                        int rowsAffected = await command.ExecuteNonQueryAsync();
+
+                        if (rowsAffected > 0)
+                        {
+                            _logger.LogInformation($"Chiamata eliminata con successo. ID: {id}");
+                            return true;
+                        }
+                        else
+                        {
+                            _logger.LogWarning($"Nessuna chiamata trovata con ID: {id}");
+                            return false;
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"Errore durante l'eliminazione della chiamata con ID {id}: {ex.Message}");
+                return false;
+            }
+        }
+
+
 
         public async Task<Chiamata> GetChiamataByNumbers(string callerNumber, string calledNumber, DateTime endCall)
         {
@@ -715,6 +859,7 @@ namespace ServerCentralino.Services
 
     }
 
+
     public class Contatto
     {
         public string? RagioneSociale { get; set; }
@@ -735,5 +880,6 @@ namespace ServerCentralino.Services
         public string? TipoChiamata { get; set; }
         public string? Locazione { get; set; }
         public string? UniqueID { get; set; }
+        public string? CampoExtra1 { get; set; }
     }
 } 

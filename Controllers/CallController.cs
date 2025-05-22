@@ -41,7 +41,7 @@ namespace ServerCentralino.Controllers
         {
             try
             {
-                var calls = _callStatisticsService.GetAllCalls(); // Metodo che devi implementare in DatabaseService
+                var calls = _callStatisticsService.GetAllCalls();
                 
                 return Ok(calls);
             }
@@ -217,6 +217,100 @@ namespace ServerCentralino.Controllers
                 return StatusCode(500, new { Message = "Errore durante il recupero dei contatti incompleti.", Error = ex.Message });
             }
         }
+
+
+        // Inserimento di una nuova chiamata
+        [HttpPost("add-call")]
+        public async Task<IActionResult> AddCall([FromBody] Chiamata chiamata)
+        {
+            if (string.IsNullOrEmpty(chiamata.NumeroChiamante) || string.IsNullOrEmpty(chiamata.NumeroChiamato))
+            {
+                return BadRequest("I campi NumeroChiamante e NumeroChiamato sono obbligatori.");
+            }
+
+            if (string.IsNullOrEmpty(chiamata.RagioneSocialeChiamante) || string.IsNullOrEmpty(chiamata.RagioneSocialeChiamato)) 
+            {
+                return BadRequest("I campi RagioneSocialeChiamante e RagioneSocialeChiamato sono obbligatori.");
+            }
+
+            try
+            {
+                var result = await _callStatisticsService.AggiungiChiamataAsync(chiamata);
+                if (result)
+                {
+                    return Ok(new { Message = "Chiamata aggiunta con successo." });
+                }
+                else
+                {
+                    return StatusCode(500, new { Message = "Errore durante l'inserimento della chiamata." });
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Errore durante l'aggiunta della chiamata.");
+                return StatusCode(500, new { Message = "Errore durante l'aggiunta della chiamata.", Error = ex.Message });
+            }
+        }
+
+
+
+        // Modifica di una chiamata esistente 
+        [HttpPut("update-call")]
+        public async Task<IActionResult> UpdateCall([FromBody] Chiamata chiamata)
+        {
+            if (chiamata.Id <= 0)
+            {
+                return BadRequest("ID della chiamata non valido.");
+            }
+
+            try
+            {
+                var result = await _callStatisticsService.AggiornaChiamataAsync(chiamata);
+                if (result)
+                {
+                    return Ok(new { Message = "Chiamata aggiornata con successo." });
+                }
+                else
+                {
+                    return NotFound("Chiamata non trovata o non aggiornata.");
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Errore durante l'aggiornamento della chiamata.");
+                return StatusCode(500, new { Message = "Errore durante l'aggiornamento della chiamata.", Error = ex.Message });
+            }
+        }
+
+
+        // Eliminazione di una chiamata
+        [HttpDelete("delete-call-by-id")]
+        public async Task<IActionResult> DeleteCallById(int id)
+        {
+            if (id <= 0)
+            {
+                return BadRequest("ID non valido.");
+            }
+
+            try
+            {
+                var result = await _callStatisticsService.DeleteChiamataByIdAsync(id);
+                if (result)
+                {
+                    return Ok(new { Message = "Chiamata eliminata con successo." });
+                }
+                else
+                {
+                    return NotFound("Chiamata non trovata.");
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Errore durante l'eliminazione della chiamata.");
+                return StatusCode(500, new { Message = "Errore durante l'eliminazione della chiamata.", Error = ex.Message });
+            }
+        }
+
 
 
         [HttpDelete("delete-contact")]

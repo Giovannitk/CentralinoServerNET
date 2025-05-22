@@ -255,7 +255,8 @@ namespace ServerCentralino.Services
                             callData[callKey].StartTime,
                             tipoChiamata,
                             callKey,
-                            ragioneSociale); // Passo callKey (linkedId o UniqueId)
+                            ragioneSociale,
+                            null); // CampoExtra1 null per chiamate automatiche
 
                         _logger.LogInformation($"4.3. Chiamata iniziata: {_callerNumber}, Key: {callKey} (LinkedId: {linkedId ?? "null"}, UniqueId: {e.UniqueId})");
                     }
@@ -345,7 +346,7 @@ namespace ServerCentralino.Services
 
         private async void OnDialBegin(object sender, DialBeginEvent e)
         {
-            _logger.LogInformation($"D: Evento ricevuto: {e.GetType().Name}");
+            _logger.LogInformation($"D: Evento ricevuto: {e.GetType().Name} - Canale: {e.Channel}");
 
             try
             {
@@ -354,7 +355,7 @@ namespace ServerCentralino.Services
 
                 if (string.IsNullOrEmpty(linkedId))
                 {
-                   // _logger.LogWarning("D: Nessun linkedid trovato nell'evento DialBegin");
+                    _logger.LogWarning("D: Nessun linkedid trovato nell'evento DialBegin");
                     return;
                 }
 
@@ -363,24 +364,20 @@ namespace ServerCentralino.Services
 
                 if (string.IsNullOrEmpty(calledNumber))
                 {
-                    //_logger.LogWarning("D: Numero chiamato non disponibile negli attributi");
+                    _logger.LogWarning("D: Numero chiamato non disponibile negli attributi");
                     return;
                 }
 
-                _logger.LogInformation($"D: Chiamata collegata - LinkedId: {linkedId}, Numero chiamato: {calledNumber}");
+                _logger.LogInformation($"D: Chiamata collegata - LinkedId: {linkedId}, Numero chiamato originale: {calledNumber}");
 
-                // Recupero anche il nome del chiamato se disponibile
-                string calledName = e.Attributes.ContainsKey("destcalleridname") ? e.Attributes["destcalleridname"] : string.Empty;
-
-                // 1. Cerco nella callData in memoria
-                if (callData.TryGetValue(linkedId, out var callInfo))
+                // Se il canale è un trunk, non processiamo questo evento
+                if (e.Channel.Contains("trunk-trk"))
                 {
-                    callInfo.CalleeNumber = calledNumber;
-                    _logger.LogInformation($"D: Aggiornata callData in memoria - LinkedId: {linkedId}");
+                    _logger.LogInformation($"D: Trunk evitato - Canale: {e.Channel}");
+                    return;
                 }
 
-                // Controllo che il numero che viene chiamato non contenga gli 0,1,2 o altro inizialmente,
-                // poichè uno di questi prefissi vengono generalemnte inseriti per chiamare all'eterno.
+                // Controllo che il numero che viene chiamato non contenga gli 0,1,2 o altro inizialmente
                 if (!string.IsNullOrEmpty(calledNumber) && calledNumber.Length >= 11)
                 {
                     if (calledNumber.StartsWith("0") || calledNumber.StartsWith("1") || calledNumber.StartsWith("2") ||
@@ -391,10 +388,21 @@ namespace ServerCentralino.Services
                         var _contatto = await _callStatisticsService.CercaContattoAsync(calledNumber);
                         if (_contatto == null)
                         {
-                            //_logger.LogInformation($"D: Numero modificato per la ricerca: {calledNumber} -> {calledNumber.Substring(1)}");
-                            calledNumber = calledNumber.Substring(1); // Prende solo gli ultimi 10 caratteri   
+                            _logger.LogInformation($"D: Numero modificato da {calledNumber} a {calledNumber.Substring(1)}");
+                            calledNumber = calledNumber.Substring(1);
                         }
                     }
+                }
+
+                // 1. Cerco nella callData in memoria
+                if (callData.TryGetValue(linkedId, out var callInfo))
+                {
+                    callInfo.CalleeNumber = calledNumber;
+                    _logger.LogInformation($"D: Aggiornata callData in memoria - LinkedId: {linkedId}, Numero chiamato: {calledNumber}");
+                }
+                else
+                {
+                    _logger.LogWarning($"D: Chiamata non trovata in callData per LinkedId: {linkedId}");
                 }
 
                 // 2. Recupero la ragione sociale
@@ -403,9 +411,9 @@ namespace ServerCentralino.Services
 
                 if (ragioneSocialeChiamato == "Non registrato") 
                 {
+                    _logger.LogInformation($"D: Aggiungo nuovo contatto per numero: {calledNumber}");
                     await _callStatisticsService.AggiungiContattoAsync(calledNumber, null, null, 0);    
                 }
-
 
                 // 3. Aggiorno il record nel database
                 bool success = await _callStatisticsService.UpdateCalledNumberAsync(
@@ -430,72 +438,103 @@ namespace ServerCentralino.Services
 
         private async void HandleHangupEvent(object sender, HangupEvent e)
         {
-            _logger.LogInformation($"Catturato evento hangup: {e.Channel} - {e.CallerId} - {e.CallerIdName} - {e.CallerIdNum} - {e.Connectedlinenum} - {e.ConnectedLineName}"); //- {e.Attributes.Keys} - id:{e.UniqueId}");
+            _logger.LogInformation($"H: Evento hangup - Canale: {e.Channel}, CallerIdNum: {e.CallerIdNum}, Connectedlinenum: {e.Connectedlinenum}");
 
-            var calledNumber = e.Connectedlinenum;
-            string hangupUniqueId = e.UniqueId;
             string linkedId = e.Attributes.ContainsKey("linkedid") ? e.Attributes["linkedid"] : null;
             DateTime endTime = DateTime.Now;
 
             if (string.IsNullOrEmpty(linkedId))
             {
-               // _logger.LogWarning("HangupEvent senza linkedId - impossibile aggiornare");
+                _logger.LogWarning("H: HangupEvent senza linkedId - impossibile aggiornare");
                 return;
             }
 
-            if (calledNumber == "<unknown>") 
+            // Se il canale è un trunk, non processiamo questo evento
+            if (e.Channel.Contains("trunk-trk"))
             {
+                _logger.LogInformation($"H: Trunk evitato - Canale: {e.Channel}");
                 return;
             }
 
+            // Recuperiamo il numero chiamato originale dalla callData
+            string calledNumber = null;
+            string RScalledNumber = null;
+            DateTime? startTime = null;
 
-            // Controllo che il numero che viene chiamato non contenga gli 0,1,2 o altro inizialmente,
-            // poichè uno di questi prefissi vengono generalemnte inseriti per chiamare all'eterno.
-            if (!string.IsNullOrEmpty(e.Connectedlinenum) && e.Connectedlinenum.Length >= 11)
+            if (callData.TryGetValue(linkedId, out var callInfo))
             {
-                if (e.Connectedlinenum.StartsWith("0") || e.Connectedlinenum.StartsWith("1") || e.Connectedlinenum.StartsWith("2"))
+                calledNumber = callInfo.CalleeNumber;
+                startTime = callInfo.StartTime;
+                _logger.LogInformation($"H: Recuperato da callData - LinkedId: {linkedId}, Numero chiamato: {calledNumber}");
+                
+                if (!string.IsNullOrEmpty(calledNumber))
                 {
-                    var _contatto = await _callStatisticsService.CercaContattoAsync(e.Connectedlinenum);
-                    if (_contatto == null)
+                    var _contattoRS = await _callStatisticsService.CercaContattoAsync(calledNumber);
+                    if (_contattoRS != null)
                     {
-                        //_logger.LogInformation($"D: Numero modificato per la ricerca: {calledNumber} -> {calledNumber.Substring(1)}");
-                        calledNumber = e.Connectedlinenum.Substring(1); // Prende solo gli ultimi 10 caratteri   
+                        RScalledNumber = _contattoRS.RagioneSociale;
+                        _logger.LogInformation($"H: Ragione sociale trovata: {RScalledNumber}");
                     }
                 }
             }
-
-            string? RScalledNumber = null;
-            var _contattoRS = await _callStatisticsService.CercaContattoAsync(calledNumber);
-            if (_contattoRS != null)
+            else
             {
-                RScalledNumber = _contattoRS.RagioneSociale;
+                _logger.LogWarning($"H: Chiamata non trovata in callData per LinkedId: {linkedId}");
             }
 
-            // 1. Prima prova ad aggiornare usando solo il linkedId
-            //bool success = await _callStatisticsService.UpdateCallEndTimeAsync(linkedId, endTime, null,null);//, e.Connectedlinenum);//  e.Connectedlinenum); // da modificare il quarto campo per inserire il numero del chiamato effettivo che parla col chiamante e a cui è stata trasferita la chiamata
-            bool success = await _callStatisticsService.UpdateCallEndTimeAsync(linkedId, endTime, null, calledNumber, RScalledNumber);
-
-            if (!success)
+            // Se non abbiamo trovato il numero chiamato nella callData, usiamo il Connectedlinenum
+            if (string.IsNullOrEmpty(calledNumber))
             {
-                // 2. Fallback: cerca nella callData in memoria
-                if (callData.TryGetValue(linkedId, out var callInfo))
+                _logger.LogWarning($"H: Numero chiamato non trovato in callData, uso Connectedlinenum: {e.Connectedlinenum}");
+                calledNumber = e.Connectedlinenum;
+                if (calledNumber == "<unknown>")
                 {
-                    _logger.LogInformation($"H: Fallback su callData - Key: {linkedId}");
-                    success = await _callStatisticsService.UpdateCallEndTimeAsync(
-                        linkedId: linkedId,
-                        endTime: endTime,
-                        startTime: callInfo.StartTime,
-                        callerNumber: calledNumber,
-                        ragioneSocialeChiamato: RScalledNumber);
+                    _logger.LogWarning("H: Numero chiamato sconosciuto");
+                    return;
                 }
-                else
+
+                // Controllo che il numero che viene chiamato non contenga gli 0,1,2 o altro inizialmente
+                if (!string.IsNullOrEmpty(calledNumber) && calledNumber.Length >= 11)
                 {
-                    _logger.LogWarning($"H: Nessuna chiamata trovata in memoria per LinkedId: {linkedId}");
+                    if (calledNumber.StartsWith("0") || calledNumber.StartsWith("1") || calledNumber.StartsWith("2"))
+                    {
+                        var _contatto = await _callStatisticsService.CercaContattoAsync(calledNumber);
+                        if (_contatto == null)
+                        {
+                            _logger.LogInformation($"H: Numero modificato da {calledNumber} a {calledNumber.Substring(1)}");
+                            calledNumber = calledNumber.Substring(1);
+                        }
+                    }
                 }
+
+                var _contattoRS = await _callStatisticsService.CercaContattoAsync(calledNumber);
+                if (_contattoRS != null)
+                {
+                    RScalledNumber = _contattoRS.RagioneSociale;
+                    _logger.LogInformation($"H: Ragione sociale trovata: {RScalledNumber}");
+                }
+            }
+
+            // Aggiorniamo il record nel database
+            bool success = await _callStatisticsService.UpdateCallEndTimeAsync(
+                linkedId: linkedId,
+                endTime: endTime,
+                startTime: startTime,
+                callerNumber: calledNumber,
+                ragioneSocialeChiamato: RScalledNumber);
+
+            if (success)
+            {
+                _logger.LogInformation($"H: Database aggiornato - LinkedId: {linkedId}, Numero chiamato: {calledNumber}, ragione sociale: {RScalledNumber}");
+            }
+            else
+            {
+                _logger.LogWarning($"H: Fallito aggiornamento database per LinkedId: {linkedId}");
             }
 
             // Rimuovo dalla callData indipendentemente dall'esito
             callData.Remove(linkedId);
+            _logger.LogInformation($"H: Chiamata rimossa da callData - LinkedId: {linkedId}");
         }
 
         private string ReplaceAccentedChars(string input)
